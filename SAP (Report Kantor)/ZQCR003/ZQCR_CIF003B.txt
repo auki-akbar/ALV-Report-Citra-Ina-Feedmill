@@ -1,0 +1,335 @@
+*&---------------------------------------------------------------------*
+*& Report ZQCR_CIF003B
+*&---------------------------------------------------------------------*
+*&
+*&---------------------------------------------------------------------*
+REPORT ZQCR_CIF003B.
+
+TABLES: mkpf, mseg, but000, makt.
+
+*-- Type pool declaration
+TYPE-POOLS: slis.
+
+*--- Selection screen
+SELECTION-SCREEN BEGIN OF BLOCK HEAD1 WITH FRAME TITLE text-001.
+PARAMETERS: P_WERKS TYPE MSEG-WERKS OBLIGATORY.
+
+SELECT-OPTIONS:
+  P_BUDAT FOR MKPF-BUDAT,
+  P_MATNR FOR MSEG-MATNR.
+
+
+SELECTION-SCREEN END OF BLOCK HEAD1.
+
+*--- Type declaration
+TYPES:
+  BEGIN OF zs_print,
+*    sel,
+    MBLNR TYPE MSEG-MBLNR,
+    BUDAT TYPE MKPF-BUDAT,
+    MATNR TYPE MSEG-MATNR,
+    MAKTX TYPE MAKT-MAKTX,
+    NAME_ORG1 TYPE BUT000-NAME_ORG1,
+    ERFMG TYPE MSEG-ERFMG,
+    ERFME TYPE MSEG-ERFME,
+    CHARG TYPE MSEG-CHARG,
+    XBLNR TYPE MKPF-XBLNR,
+
+    cellcolor TYPE lvc_t_scol,
+    colinfo     TYPE lvc_t_scol,
+  END OF zs_print,
+  zt_print TYPE TABLE OF zs_print,
+
+  BEGIN OF ZSVBR,
+*    SEL,
+    MBLNR TYPE MSEG-MBLNR,
+    BUDAT TYPE MKPF-BUDAT,
+    MATNR TYPE MSEG-MATNR,
+    MAKTX TYPE MAKT-MAKTX,
+    NAME_ORG1 TYPE BUT000-NAME_ORG1,
+    ERFMG TYPE MSEG-ERFMG,
+    ERFME TYPE MSEG-ERFME,
+    CHARG TYPE MSEG-CHARG,
+    LIFNR TYPE MSEG-LIFNR,
+    LGORT TYPE MSEG-LGORT,
+    BWART TYPE MSEG-BWART,
+    EBELN TYPE MSEG-EBELN,
+    EBELP TYPE MSEG-EBELP,
+    XBLNR TYPE MKPF-XBLNR,
+
+    colinfo     TYPE lvc_t_scol,
+  END OF ZSVBR,
+  ZTVBR TYPE TABLE OF ZSVBR.
+
+*--- Internal table declaration
+DATA: it_print TYPE zt_print,
+      IT_ZVBR TYPE ZTVBR,
+      lt_fieldcat        TYPE slis_t_fieldcat_alv.
+
+
+*--- Work area declaration
+DATA: WA_ZVBR            TYPE ZSVBR,
+      wa_print           TYPE zs_print,
+      wa_layout          TYPE slis_layout_alv,
+      wa_cellcolor       TYPE lvc_s_scol,
+      lv_index           TYPE sy-tabix.
+
+
+*--- Start-of-selection event
+START-OF-SELECTION.
+
+  SELECT MSEG~MBLNR
+         MKPF~BUDAT
+         MSEG~ERFMG
+         MSEG~ERFME
+         MSEG~LIFNR
+         MSEG~MATNR
+         MSEG~BWART
+         MSEG~LGORT
+         MSEG~CHARG
+         MSEG~EBELN
+         MSEG~EBELP
+         MKPF~XBLNR
+    FROM MSEG
+    INNER JOIN MKPF ON MKPF~MBLNR = MSEG~MBLNR AND
+                       MKPF~MJAHR = MSEG~MJAHR
+    INTO CORRESPONDING FIELDS OF TABLE IT_ZVBR
+    WHERE MSEG~WERKS = P_WERKS AND
+          MKPF~BUDAT IN P_BUDAT AND
+          MSEG~MATNR IN P_MATNR.
+*          MKPF~USNAM LIKE 'CIF%'.
+
+   LOOP AT IT_ZVBR INTO WA_ZVBR.
+     lv_index = sy-tabix.
+
+     IF ( WA_ZVBR-BWART = '101' OR WA_ZVBR-BWART = '102' ) AND WA_ZVBR-LGORT = 'Z001'.
+      WA_PRINT-MBLNR = WA_ZVBR-MBLNR.
+      WA_PRINT-BUDAT = WA_ZVBR-BUDAT.
+      WA_PRINT-MATNR = WA_ZVBR-MATNR.
+      WA_PRINT-CHARG = WA_ZVBR-CHARG.
+      WA_PRINT-XBLNR = WA_ZVBR-XBLNR.
+*
+      IF WA_PRINT-MATNR IS NOT INITIAL.
+        SELECT SINGLE MAKTX FROM MAKT
+          INTO WA_PRINT-MAKTX
+          WHERE MATNR = WA_ZVBR-MATNR.
+      ELSE.
+        SELECT SINGLE TXZ01 FROM EKPO
+          INTO WA_PRINT-MAKTX
+          WHERE EBELN = WA_ZVBR-EBELN AND
+                EBELP = WA_ZVBR-EBELP.
+      ENDIF.
+*
+*     Get and Check the name of vendor
+
+      SELECT SINGLE NAME_ORG1 FROM BUT000
+        INTO WA_PRINT-NAME_ORG1
+        WHERE PARTNER = WA_ZVBR-LIFNR.
+
+      IF wa_print-name_org1 = ''.
+        CLEAR wa_print-name_org1.
+        SELECT SINGLE mc_name2 FROM but000
+          INTO wa_print-name_org1
+          WHERE partner = wa_zvbr-lifnr.
+      ENDIF.
+
+      IF wa_print-name_org1 = ''.
+        CLEAR wa_print-name_org1.
+        SELECT SINGLE name_first FROM but000
+          INTO wa_print-name_org1
+          WHERE partner = wa_zvbr-lifnr.
+      ENDIF.
+
+      IF wa_print-name_org1 = ''.
+        CLEAR wa_print-name_org1.
+        SELECT SINGLE bu_sort2 FROM but000
+          INTO wa_print-name_org1
+          WHERE partner = wa_zvbr-lifnr.
+      ENDIF.
+
+*     End of checking vendors name.
+
+*
+      IF WA_ZVBR-BWART = '101'.
+        WA_PRINT-ERFMG = WA_ZVBR-ERFMG.
+
+        wa_cellcolor-fname = 'ERFMG'.
+        wa_cellcolor-color-col = '5'.
+        wa_cellcolor-color-int = '1'.
+        wa_cellcolor-color-inv = '0'.
+        APPEND wa_cellcolor TO wa_PRINT-cellcolor.
+        CLEAR: wa_cellcolor.
+
+        wa_cellcolor-fname = 'ERFME'.
+        wa_cellcolor-color-col = '5'.
+        wa_cellcolor-color-int = '1'.
+        wa_cellcolor-color-inv = '0'.
+        APPEND wa_cellcolor TO wa_PRINT-cellcolor.
+        CLEAR: wa_cellcolor.
+      ELSEIF WA_ZVBR-BWART = '102'.
+        WA_PRINT-ERFMG = WA_ZVBR-ERFMG * -1.
+
+        wa_cellcolor-fname = 'ERFMG'.
+        wa_cellcolor-color-col = '6'.
+        wa_cellcolor-color-int = '1'.
+        wa_cellcolor-color-inv = '0'.
+        APPEND wa_cellcolor TO wa_PRINT-cellcolor.
+        CLEAR: wa_cellcolor.
+
+        wa_cellcolor-fname = 'ERFME'.
+        wa_cellcolor-color-col = '6'.
+        wa_cellcolor-color-int = '1'.
+        wa_cellcolor-color-inv = '0'.
+        APPEND wa_cellcolor TO wa_PRINT-cellcolor.
+        CLEAR: wa_cellcolor.
+      ENDIF.
+
+      MODIFY IT_PRINT FROM WA_PRINT INDEX lv_index TRANSPORTING cellcolor.
+
+      WA_PRINT-ERFME = WA_ZVBR-ERFME.
+
+      APPEND WA_PRINT TO IT_PRINT.
+      CLEAR: WA_ZVBR, WA_PRINT.
+    ENDIF.
+   ENDLOOP.
+
+   DELETE ADJACENT DUPLICATES FROM IT_PRINT COMPARING MBLNR MATNR.
+
+*--- Header
+*  PERFORM f_build_header_list.
+*--- Field Catalog
+  PERFORM f_field_catalog.
+
+*--- Layout
+  PERFORM f_build_layout.
+
+
+END-OF-SELECTION.
+
+* Perform to display ALV report
+  PERFORM f_alv_report_display.
+
+
+*&---------------------------------------------------------------------*
+*&      Form  sub_field_catalog
+*&---------------------------------------------------------------------*
+*       Build Field Catalog
+*----------------------------------------------------------------------*
+*       No Parameter
+*----------------------------------------------------------------------*
+FORM f_field_catalog .
+
+  DATA: lwa_fcat TYPE slis_fieldcat_alv.
+*
+  CLEAR lwa_fcat.
+  lwa_fcat-fieldname     = 'MBLNR'.
+  lwa_fcat-seltext_l     = lwa_fcat-seltext_m = lwa_fcat-seltext_l = 'Material Document'.
+  lwa_fcat-ref_tabname   = 'MSEG'.
+  lwa_fcat-ref_fieldname = 'MBLNR'.
+  lwa_fcat-ddictxt       = 'L'.
+  APPEND lwa_fcat TO lt_fieldcat.
+**
+***  "MATERIAL DESC
+  CLEAR lwa_fcat.
+  lwa_fcat-fieldname     = 'BUDAT'.
+  lwa_fcat-seltext_l     = lwa_fcat-seltext_m = lwa_fcat-seltext_l = 'Receive Date'.
+  lwa_fcat-ref_tabname   = 'MKPF'.
+  lwa_fcat-ddictxt       = 'L'.
+  lwa_fcat-ref_fieldname = 'BUDAT'.
+  APPEND lwa_fcat TO lt_fieldcat.
+**
+  CLEAR lwa_fcat.
+  lwa_fcat-fieldname     = 'MATNR'.
+  lwa_fcat-seltext_l     = lwa_fcat-seltext_m = lwa_fcat-seltext_l = 'Material Code'.
+  lwa_fcat-ref_tabname   = 'MSEG'.
+  lwa_fcat-ddictxt       = 'L'.
+  lwa_fcat-ref_fieldname = 'MATNR'.
+  APPEND lwa_fcat TO lt_fieldcat.
+**
+  CLEAR lwa_fcat.
+  lwa_fcat-fieldname     = 'MAKTX'.
+  lwa_fcat-seltext_l     = lwa_fcat-seltext_m = lwa_fcat-seltext_l = 'Material Name'.
+  lwa_fcat-ref_tabname   = 'MAKT'.
+  lwa_fcat-ddictxt       = 'L'.
+  lwa_fcat-ref_fieldname = 'MAKTX'.
+  APPEND lwa_fcat TO lt_fieldcat.
+**  "UOM
+  CLEAR lwa_fcat.
+  lwa_fcat-fieldname     = 'NAME_ORG1'.
+  lwa_fcat-seltext_l     = lwa_fcat-seltext_m = lwa_fcat-seltext_l = 'Vendor Name'.
+  lwa_fcat-ref_tabname   = 'BUT000'.
+  lwa_fcat-ddictxt       = 'L'.
+  lwa_fcat-ref_fieldname = 'NAME_ORG1'.
+  APPEND lwa_fcat TO lt_fieldcat.
+**  "AMOUNT
+  CLEAR lwa_fcat.
+  lwa_fcat-fieldname     = 'ERFMG'.
+  lwa_fcat-seltext_l     = lwa_fcat-seltext_m = lwa_fcat-seltext_l = 'Quantity'.
+  lwa_fcat-ref_tabname   = 'MSEG'.
+  lwa_fcat-ddictxt       = 'L'.
+  lwa_fcat-ref_fieldname = 'ERFMG'.
+  lwa_fcat-qfieldname    = 'ERFME'.
+  APPEND lwa_fcat TO lt_fieldcat.
+**    "CURR
+  CLEAR lwa_fcat.
+  lwa_fcat-fieldname     = 'ERFME'.
+  lwa_fcat-seltext_l     = lwa_fcat-seltext_m = lwa_fcat-seltext_l = 'UoM'.
+  lwa_fcat-ref_tabname   = 'MSEG'.
+  lwa_fcat-ddictxt       = 'L'.
+  lwa_fcat-ref_fieldname = 'ERFME'.
+  APPEND lwa_fcat TO lt_fieldcat.
+**
+  CLEAR lwa_fcat.
+  lwa_fcat-fieldname     = 'CHARG'.
+  lwa_fcat-seltext_l     = lwa_fcat-seltext_m = lwa_fcat-seltext_l = 'Batch Number'.
+  lwa_fcat-ref_tabname   = 'MSEG'.
+  lwa_fcat-ddictxt       = 'L'.
+  lwa_fcat-ref_fieldname = 'CHARG'.
+  APPEND lwa_fcat TO lt_fieldcat.
+
+  CLEAR lwa_fcat.
+  lwa_fcat-fieldname     = 'XBLNR'.
+  lwa_fcat-seltext_l     = lwa_fcat-seltext_m = lwa_fcat-seltext_l = 'No. Truck'.
+  lwa_fcat-ref_tabname   = 'MKPF'.
+  lwa_fcat-ddictxt       = 'L'.
+  lwa_fcat-ref_fieldname = 'XBLNR'.
+  APPEND lwa_fcat TO lt_fieldcat.
+
+  ENDFORM.                    " sub_field_catalog
+
+*&---------------------------------------------------------------------*
+*&      Form  f_populate_layout
+*&---------------------------------------------------------------------*
+*       Populate ALV layout
+*----------------------------------------------------------------------*
+*       No Parameter
+*----------------------------------------------------------------------*
+FORM f_build_layout.
+
+  CLEAR wa_layout.
+  wa_layout-colwidth_optimize = 'X'.         " Optimization of Col width
+  wa_layout-coltab_fieldname = 'CELLCOLOR'.  " Cell color Column Name
+
+ENDFORM.                    " f_populate_layout
+
+
+*&---------------------------------------------------------------------*
+*&      Form  f_alv_report_display
+*&---------------------------------------------------------------------*
+FORM f_alv_report_display .
+
+* ALV report
+  CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY'
+    EXPORTING
+      i_callback_program       = sy-repid
+      is_layout                = wa_layout
+      it_fieldcat              = lt_fieldcat
+    TABLES
+      t_outtab                 = it_print
+    EXCEPTIONS
+      program_error            = 1
+      OTHERS                   = 2.
+  IF sy-subrc <> 0.
+  ENDIF.
+
+ENDFORM.

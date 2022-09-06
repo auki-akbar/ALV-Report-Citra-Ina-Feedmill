@@ -1,0 +1,114 @@
+*&---------------------------------------------------------------------*
+*& Report ZQCR_CIF003
+*&---------------------------------------------------------------------*
+*&
+*&---------------------------------------------------------------------*
+REPORT ZQCR_CIF003.
+
+TABLES: mkpf, mseg, but000, makt.
+
+*-- Type pool declaration
+TYPE-POOLS: slis.
+
+*--- Selection screen
+SELECTION-SCREEN BEGIN OF BLOCK HEAD1 WITH FRAME TITLE text-001.
+PARAMETERS: P_WERKS TYPE MSEG-WERKS OBLIGATORY DEFAULT 'E201'.
+
+SELECT-OPTIONS:
+  P_BUDAT FOR MKPF-BUDAT,
+  P_MATNR FOR MSEG-MATNR.
+
+SELECTION-SCREEN END OF BLOCK HEAD1.
+
+SELECTION-SCREEN BEGIN OF BLOCK HEAD2 WITH FRAME TITLE text-002.
+PARAMETERS:
+            P_RAD1 RADIOBUTTON GROUP RB1 USER-COMMAND uc1 DEFAULT 'X',
+            P_RAD2 RADIOBUTTON GROUP RB1,
+            P_RAD3 RADIOBUTTON GROUP RB1,
+            P_RAD4 RADIOBUTTON GROUP RB1,
+            P_RAD5 RADIOBUTTON GROUP RB1,
+            P_RAD6 RADIOBUTTON GROUP RB1.
+
+SELECTION-SCREEN END OF BLOCK HEAD2.
+
+SELECTION-SCREEN BEGIN OF BLOCK ORDER WITH FRAME TITLE text-003.
+  SELECT-OPTIONS   p_aufnr FOR mseg-aufnr MODIF ID mi.
+SELECTION-SCREEN END OF BLOCK ORDER.
+
+AT SELECTION-SCREEN OUTPUT.
+  LOOP AT SCREEN.
+    IF P_RAD3 = 'X'.
+      IF screen-group1 = 'MI'.
+        screen-input = '1'.
+        MODIFY SCREEN.
+      ENDIF.
+    ELSEIF P_RAD5 = 'X'.
+      IF screen-group1 = 'MI'.
+        screen-input = '1'.
+        MODIFY SCREEN.
+      ENDIF.
+    ELSEIF P_RAD6 = 'X'.
+      IF screen-group1 = 'MI'.
+        screen-input = '1'.
+        MODIFY SCREEN.
+      ENDIF.
+    ELSE.
+      IF screen-group1 = 'MI'.
+        screen-input = '0'.
+        MODIFY SCREEN.
+      ENDIF.
+    ENDIF.
+  ENDLOOP.
+
+START-OF-SELECTION.
+
+    IF P_RAD1 = 'X'.
+      SUBMIT ZQCR_CIF003A
+              WITH P_WERKS EQ P_WERKS
+              WITH P_BUDAT IN P_BUDAT
+              WITH P_MATNR IN P_MATNR
+                AND RETURN.
+    ENDIF.
+
+    IF P_RAD2 = 'X'.
+      SUBMIT ZQCR_CIF003B
+              WITH P_WERKS EQ P_WERKS
+              WITH P_BUDAT IN P_BUDAT
+              WITH P_MATNR IN P_MATNR
+                AND RETURN.
+    ENDIF.
+
+    IF P_RAD3 = 'X'.
+      SUBMIT ZQCR_CIF003C
+              WITH P_WERKS EQ P_WERKS
+              WITH P_BUDAT IN P_BUDAT
+              WITH P_MATNR IN P_MATNR
+              WITH P_AUFNR IN P_AUFNR
+                AND RETURN.
+    ENDIF.
+
+    IF P_RAD4 = 'X'.
+      SUBMIT ZQCR_CIF003D
+              WITH P_WERKS EQ P_WERKS
+              WITH P_BUDAT IN P_BUDAT
+              WITH P_MATNR IN P_MATNR
+                AND RETURN.
+    ENDIF.
+
+    IF P_RAD5 = 'X'.
+      SUBMIT ZQCR_CIF003E
+              WITH P_WERKS EQ P_WERKS
+              WITH P_BUDAT IN P_BUDAT
+              WITH P_MATNR IN P_MATNR
+              WITH P_AUFNR IN P_AUFNR
+                AND RETURN.
+    ENDIF.
+
+    IF P_RAD6 = 'X'.
+      SUBMIT ZQCR_CIF003F
+              WITH P_WERKS EQ P_WERKS
+              WITH P_BUDAT IN P_BUDAT
+              WITH P_MATNR IN P_MATNR
+              WITH P_AUFNR IN P_AUFNR
+                AND RETURN.
+    ENDIF.

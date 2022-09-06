@@ -1,0 +1,908 @@
+*&---------------------------------------------------------------------*
+*& Report  ZCOR_CIF002
+*&
+*&---------------------------------------------------------------------*
+*&
+*&
+*&---------------------------------------------------------------------*
+
+REPORT  ZCOR_CIF002.
+
+TYPE-POOLS:slis.
+INCLUDE: <icon>.
+
+CONSTANTS:
+  yes                                    VALUE 'X',
+  no                                     VALUE space,
+  c_vrsio(3)                             VALUE '000'.
+"----------------- NAMA TABEL YANG DI GUNAKAN ----------
+TABLES: MSEG.
+
+*Common Mandatory and Non Mandatory ALV Variables
+DATA:
+  i_layout     TYPE slis_layout_alv,
+  i_events     TYPE slis_t_event,
+  i_fieldcat   TYPE slis_t_fieldcat_alv,
+  i_print      TYPE slis_print_alv,
+  i_list_top   TYPE slis_t_listheader,
+  i_list_end   TYPE slis_t_listheader,
+  i_sort       TYPE slis_t_sortinfo_alv,
+  i_color      TYPE lvc_t_scol WITH HEADER LINE,
+  wa_fieldcat  LIKE LINE OF i_fieldcat,
+  i_variant    LIKE disvariant,
+  i_selfield   TYPE slis_selfield,
+  fcode        TYPE TABLE OF sy-ucomm,
+  ok_code      TYPE sy-ucomm,
+  data_count   TYPE i,
+  header_count TYPE i,
+  v_total TYPE sy-pagno.
+
+
+DATA:
+  gt_ekko LIKE ekko OCCURS 0,
+  gs_extract1 LIKE disextract,
+  gs_extract2 LIKE disextract.
+
+"------- FIELD DATABASE YANG AKAN DI PANGGIL
+TYPES:
+  BEGIN OF zs_print,
+    sel,
+    werks TYPE mseg-werks,
+    matnr TYPE mara-matnr,
+    maktx TYPE makt-maktx,
+    meins TYPE mseg-meins,
+    start TYPE budat,
+    finish TYPE budat,
+    stok_awal TYPE mbewh-lbkum,
+    open_value TYPE mbewh-salk3,
+    receipt_qty TYPE mseg-menge,
+    receipt_val TYPE mseg-dmbtr,
+    issue_qty TYPE mseg-menge,
+    issue_val TYPE mseg-dmbtr,
+    cls_stck TYPE mbewh-lbkum,
+    cls_val TYPE mbewh-salk3,
+    currency TYPE mseg-waers,
+    average TYPE mseg-dmbtr,
+
+    colinfo     TYPE lvc_t_scol,
+  END OF zs_print,
+  zt_print TYPE TABLE OF zs_print,
+
+  BEGIN OF zsvbr,
+    sel,
+    matnr TYPE mseg-matnr,
+    dmbtr TYPE mseg-dmbtr,
+    shkzg TYPE mseg-shkzg,
+    menge TYPE mseg-menge,
+    bwart TYPE mseg-bwart,
+    insmk TYPE mseg-insmk,
+    receipt_qty TYPE mseg-menge,
+    receipt_val TYPE mseg-dmbtr,
+    issue_qty TYPE mseg-menge,
+    issue_val TYPE mseg-dmbtr,
+    xauto TYPE mseg-xauto,
+
+    colinfo     TYPE lvc_t_scol,
+  END OF zsvbr,
+  ztvbr TYPE TABLE OF zsvbr,
+
+  BEGIN OF zs_stok,
+    sel,
+    matnr TYPE mseg-matnr,
+    shkzg TYPE mseg-shkzg,
+    menge TYPE mseg-menge,
+    dmbtr TYPE mseg-dmbtr,
+    xauto TYPE mseg-xauto,
+    bwart TYPE mseg-bwart,
+  END OF zs_stok,
+  zt_stok TYPE TABLE OF zs_stok.
+
+
+DATA:
+  it_print TYPE zt_print,
+  wa_print TYPE zs_print,
+  it_zvbr TYPE ztvbr,
+  wa_zvbr TYPE zsvbr,
+  it_mara TYPE TABLE OF mara,
+  wa_mara TYPE mara,
+  it_stok TYPE zt_stok,
+  wa_stok TYPE zs_stok,
+  tgl_1 TYPE mseg-budat_mkpf,
+
+INITIALIZATION.
+CALL FUNCTION 'REUSE_ALV_EXTRACT_AT_INIT'
+  CHANGING
+    cs_extract1 = gs_extract1
+    cs_extract2 = gs_extract2.
+
+"------- INPUTAN BOX YANG TAMPIL DI SCREEN
+SELECTION-SCREEN BEGIN OF BLOCK HEAD1 WITH FRAME TITLE text-001.
+
+  PARAMETERS p_werks TYPE mseg-werks DEFAULT 'E201'.
+
+  SELECT-OPTIONS:
+    "p_matnr FOR mseg-matnr,
+    p_budat FOR mseg-budat_mkpf OBLIGATORY.
+
+SELECTION-SCREEN END OF BLOCK HEAD1.
+
+START-OF-SELECTION.
+
+  PERFORM f_getdt.
+  PERFORM f_lstdt.
+
+
+  DESCRIBE TABLE it_print LINES data_count.
+  IF data_count > 0.
+    CALL FUNCTION 'SAPGUI_PROGRESS_INDICATOR'
+      EXPORTING
+        text = 'Preparing report.......'.
+
+    PERFORM f_layout_init USING i_layout.
+    PERFORM f_eventtab_build USING i_events[].
+    i_variant-report = sy-repid.
+    PERFORM f_print_control.
+    PERFORM f_build_header_list.
+    PERFORM f_build_sort.
+    PERFORM f_build_fieldcat.
+    PERFORM f_build_data TABLES it_print.
+    PERFORM print_alv.
+  ELSE.
+    MESSAGE i000(z02).
+  ENDIF.
+
+
+*Form  f_layout_init
+*Global settings for ALV worksheet, Change according to needs
+FORM f_layout_init  USING   p_layout TYPE slis_layout_alv.
+  p_layout-detail_popup       = yes.
+  p_layout-numc_sum           = yes.
+  p_layout-colwidth_optimize  = no.
+  p_layout-zebra              = yes.
+  p_layout-get_selinfos        = yes.
+  p_layout-coltab_fieldname   = 'COLINFO'.
+  p_layout-subtotals_text     = 'SubTotal'.
+  p_layout-totals_text        = 'Total'.
+  p_layout-box_fieldname      = 'SEL'. "------- UNTUK MENGAKTIFKAN CEKBOX(SELECTION) 'SEL'
+
+ENDFORM.                    " f_layout_init
+
+*Form  f_eventtab_build
+*Event listing for ALV worksheet, Change according to needs
+FORM f_eventtab_build  USING p_events TYPE slis_t_event.
+  DATA:
+    ls_event TYPE slis_alv_event.
+
+  CALL FUNCTION 'REUSE_ALV_EVENTS_GET'
+    EXPORTING
+      i_list_type = 0
+    IMPORTING
+      et_events   = p_events.
+
+  READ TABLE p_events WITH KEY name = slis_ev_top_of_page INTO ls_event.
+  IF sy-subrc = 0.
+    MOVE slis_ev_top_of_page TO: ls_event-form, ls_event-name.
+    APPEND ls_event TO p_events.
+  ENDIF.
+
+  READ TABLE p_events WITH KEY name = slis_ev_end_of_page INTO ls_event.
+  IF sy-subrc = 0.
+    MOVE slis_ev_end_of_page TO: ls_event-form, ls_event-name.
+    APPEND ls_event TO p_events.
+  ENDIF.
+
+*  READ TABLE p_events WITH KEY name = slis_ev_end_of_list INTO ls_event.
+*  IF sy-subrc = 0.
+*    MOVE slis_ev_end_of_list TO: ls_event-form, ls_event-name.
+*    APPEND ls_event TO p_events.
+*  ENDIF.
+
+  READ TABLE p_events WITH KEY name = slis_ev_top_of_list INTO ls_event.
+  IF sy-subrc = 0.
+    MOVE slis_ev_top_of_list TO: ls_event-form, ls_event-name.
+    APPEND ls_event TO p_events.
+  ENDIF.
+
+  "----------------- UNCOMMAND UNTUK NONAKTIVKAN TOMBOL DI ATAS-----------
+*  READ TABLE p_events WITH KEY name = slis_ev_pf_status_set INTO ls_event.
+*  IF sy-subrc = 0.
+*    MOVE slis_ev_pf_status_set TO: ls_event-form, ls_event-name.
+*    APPEND ls_event TO p_events.
+*  ENDIF.
+  "---------------- END SCRIPT ---------------------------------------------
+
+  READ TABLE p_events WITH KEY name = slis_ev_user_command INTO ls_event.
+  IF sy-subrc = 0.
+    MOVE slis_ev_user_command TO: ls_event-form, ls_event-name.
+    APPEND ls_event TO p_events.
+  ENDIF.
+
+ENDFORM.                    " f_eventtab_build
+
+*Form  f_print_control
+*Global settings for print control???????????, Change according to needs
+FORM f_print_control.
+  i_print-no_print_selinfos      = yes.
+  i_print-no_print_listinfos     = yes.
+  i_print-reserve_lines          = 0.
+  i_print-no_change_print_params = yes.
+
+ENDFORM.                    " f_print_control
+
+*Form  f_build_header_list
+*As the name implies i guess (^_^;)
+FORM f_build_header_list.
+  DATA: lwa_list_top LIKE LINE OF i_list_top,
+        lv_text LIKE sy-title,
+        gs_line TYPE slis_listheader,
+        vtime   TYPE char12,
+        vtitle  TYPE char50.
+
+  REFRESH i_list_top.
+  CLEAR lwa_list_top.
+  lwa_list_top-typ = 'H'.
+  lwa_list_top-key = no.
+  lwa_list_top-info = sy-title.
+  APPEND lwa_list_top TO i_list_top.
+
+*  REFRESH i_list_top.
+*  CLEAR lwa_list_top.
+*  lwa_list_top-typ = 'S'.
+*  lwa_list_top-key = 'user:'.
+*  lwa_list_top-info = sy-uname.
+*  APPEND lwa_list_top TO i_list_top.
+
+ENDFORM.                    " f_build_header_list
+
+*Form  f_build_sort
+*Sort by blah blah blah
+FORM f_build_sort .
+  DATA: l_sort TYPE slis_sortinfo_alv.
+
+
+  define def_sort.
+    clear l_sort.
+*Sort position
+    l_sort-spos      = &1.
+    l_sort-fieldname = &2.
+
+*Sort by ascending
+    l_sort-up        = yes.
+
+*Subtot key
+    l_sort-subtot    = yes.
+
+*Separate Line between Group
+    l_sort-group     = 'UL'.
+    append l_sort to i_sort.
+  end-of-definition.
+
+*  def_Sort '01' 'RACCT'.
+
+ENDFORM.                    " f_build_sort
+
+
+
+***************************Form fbuild_fieldcat.
+***************************What fields to expose
+FORM f_build_fieldcat.
+*****************************************************
+
+  REFRESH i_fieldcat.
+
+*  "Material Number
+  CLEAR wa_fieldcat.
+  wa_fieldcat-fieldname     = 'WERKS'.
+  wa_fieldcat-seltext_l     = wa_fieldcat-seltext_m = wa_fieldcat-seltext_l = 'Plant'.
+  wa_fieldcat-ref_tabname   = 'MSEG'.
+  wa_fieldcat-ref_fieldname = 'WERKS'.
+  wa_fieldcat-ddictxt       = 'L'.
+  APPEND wa_fieldcat TO i_fieldcat.
+*
+  CLEAR wa_fieldcat.
+  wa_fieldcat-fieldname     = 'MATNR'.
+  wa_fieldcat-seltext_l     = wa_fieldcat-seltext_m = wa_fieldcat-seltext_l = 'Material Number'.
+  wa_fieldcat-ref_tabname   = 'MARA'.
+  wa_fieldcat-ref_fieldname = 'MATNR'.
+  wa_fieldcat-ddictxt       = 'L'.
+  APPEND wa_fieldcat TO i_fieldcat.
+*
+  CLEAR wa_fieldcat.
+  wa_fieldcat-fieldname     = 'MAKTX'.
+  wa_fieldcat-seltext_l     = wa_fieldcat-seltext_m = wa_fieldcat-seltext_l = 'Material Description'.
+  wa_fieldcat-ref_tabname   = 'MAKT'.
+  wa_fieldcat-ref_fieldname = 'MAKTX'.
+  wa_fieldcat-ddictxt       = 'L'.
+  APPEND wa_fieldcat TO i_fieldcat.
+*
+  CLEAR wa_fieldcat.
+  wa_fieldcat-fieldname     = 'MEINS'.
+  wa_fieldcat-seltext_l     = wa_fieldcat-seltext_m = wa_fieldcat-seltext_l = 'UoM'.
+  wa_fieldcat-ref_tabname   = 'MSEG'.
+  wa_fieldcat-ref_fieldname = 'MEINS'.
+  wa_fieldcat-ddictxt       = 'L'.
+  APPEND wa_fieldcat TO i_fieldcat.
+*
+  CLEAR wa_fieldcat.
+  wa_fieldcat-fieldname     = 'START'.
+  wa_fieldcat-seltext_l     = wa_fieldcat-seltext_m = wa_fieldcat-seltext_l = 'From Date'.
+  wa_fieldcat-ref_tabname   = 'MSEG'.
+  wa_fieldcat-ref_fieldname = 'BUDAT_MKPF'.
+  wa_fieldcat-ddictxt       = 'L'.
+  APPEND wa_fieldcat TO i_fieldcat.
+*
+  CLEAR wa_fieldcat.
+  wa_fieldcat-fieldname     = 'FINISH'.
+  wa_fieldcat-seltext_l     = wa_fieldcat-seltext_m = wa_fieldcat-seltext_l = 'To Date'.
+  wa_fieldcat-ref_tabname   = 'MSEG'.
+  wa_fieldcat-ref_fieldname = 'BUDAT_MKPF'.
+  wa_fieldcat-ddictxt       = 'L'.
+  APPEND wa_fieldcat TO i_fieldcat.
+*
+  CLEAR wa_fieldcat.
+  wa_fieldcat-fieldname     = 'STOK_AWAL'.
+  wa_fieldcat-seltext_l     = wa_fieldcat-seltext_m = wa_fieldcat-seltext_l = 'Opening Stock'.
+  wa_fieldcat-ref_tabname   = 'MBEWH'.
+  wa_fieldcat-ref_fieldname = 'LBKUM'.
+  wa_fieldcat-qfieldname    = 'MEINS'.
+  wa_fieldcat-ddictxt       = 'L'.
+  APPEND wa_fieldcat TO i_fieldcat.
+*
+  CLEAR wa_fieldcat.
+  wa_fieldcat-fieldname     = 'OPEN_VALUE'.
+  wa_fieldcat-seltext_l     = wa_fieldcat-seltext_m = wa_fieldcat-seltext_l = 'Opening Value'.
+  wa_fieldcat-ref_tabname   = 'MBEWH'.
+  wa_fieldcat-ref_fieldname = 'SALK3'.
+  wa_fieldcat-cfieldname    = 'CURRENCY'.
+  wa_fieldcat-ddictxt       = 'L'.
+  APPEND wa_fieldcat TO i_fieldcat.
+*
+  CLEAR wa_fieldcat.
+  wa_fieldcat-fieldname     = 'RECEIPT_QTY'.
+  wa_fieldcat-seltext_l     = wa_fieldcat-seltext_m = wa_fieldcat-seltext_l = 'Total Receipt Quantity'.
+  wa_fieldcat-ref_tabname   = 'MSEG'.
+  wa_fieldcat-ref_fieldname = 'ERFMG'.
+  wa_fieldcat-qfieldname    = 'MEINS'.
+  wa_fieldcat-ddictxt       = 'L'.
+  APPEND wa_fieldcat TO i_fieldcat.
+*
+  CLEAR wa_fieldcat.
+  wa_fieldcat-fieldname     = 'RECEIPT_VAL'.
+  wa_fieldcat-seltext_l     = wa_fieldcat-seltext_m = wa_fieldcat-seltext_l = 'Total Receipt Values'.
+  wa_fieldcat-ref_tabname   = 'MSEG'.
+  wa_fieldcat-ref_fieldname = 'DMBTR'.
+  wa_fieldcat-cfieldname    = 'CURRENCY'.
+  wa_fieldcat-ddictxt       = 'L'.
+  APPEND wa_fieldcat TO i_fieldcat.
+*
+  CLEAR wa_fieldcat.
+  wa_fieldcat-fieldname     = 'ISSUE_QTY'.
+  wa_fieldcat-seltext_l     = wa_fieldcat-seltext_m = wa_fieldcat-seltext_l = 'Total Issue Quantity'.
+  wa_fieldcat-ref_tabname   = 'MSEG'.
+  wa_fieldcat-ref_fieldname = 'ERFMG'.
+  wa_fieldcat-qfieldname    = 'MEINS'.
+  wa_fieldcat-ddictxt       = 'L'.
+  APPEND wa_fieldcat TO i_fieldcat.
+*
+  CLEAR wa_fieldcat.
+  wa_fieldcat-fieldname     = 'ISSUE_VAL'.
+  wa_fieldcat-seltext_l     = wa_fieldcat-seltext_m = wa_fieldcat-seltext_l = 'Total Issue Values'.
+  wa_fieldcat-ref_tabname   = 'MSEG'.
+  wa_fieldcat-ref_fieldname = 'DMBTR'.
+  wa_fieldcat-cfieldname    = 'CURRENCY'.
+  wa_fieldcat-ddictxt       = 'L'.
+  APPEND wa_fieldcat TO i_fieldcat.
+*
+  CLEAR wa_fieldcat.
+  wa_fieldcat-fieldname     = 'CLS_STCK'.
+  wa_fieldcat-seltext_l     = wa_fieldcat-seltext_m = wa_fieldcat-seltext_l = 'Closing Stock'.
+  wa_fieldcat-ref_tabname   = 'MBEWH'.
+  wa_fieldcat-ref_fieldname = 'LBKUM'.
+  wa_fieldcat-qfieldname    = 'MEINS'.
+  wa_fieldcat-ddictxt       = 'L'.
+  APPEND wa_fieldcat TO i_fieldcat.
+*
+  CLEAR wa_fieldcat.
+  wa_fieldcat-fieldname     = 'CLS_VAL'.
+  wa_fieldcat-seltext_l     = wa_fieldcat-seltext_m = wa_fieldcat-seltext_l = 'Closing Value'.
+  wa_fieldcat-ref_tabname   = 'MBEWH'.
+  wa_fieldcat-ref_fieldname = 'SALK3'.
+  wa_fieldcat-cfieldname    = 'CURRENCY'.
+  wa_fieldcat-ddictxt       = 'L'.
+  APPEND wa_fieldcat TO i_fieldcat.
+*
+  CLEAR wa_fieldcat.
+  wa_fieldcat-fieldname     = 'AVERAGE'.
+  wa_fieldcat-seltext_l     = wa_fieldcat-seltext_m = wa_fieldcat-seltext_l = 'Average per Kg'.
+  wa_fieldcat-ref_tabname   = 'MSEG'.
+  wa_fieldcat-ref_fieldname = 'DMBTR'.
+  wa_fieldcat-cfieldname    = 'CURRENCY'.
+  wa_fieldcat-ddictxt       = 'L'.
+  APPEND wa_fieldcat TO i_fieldcat.
+*
+  CLEAR wa_fieldcat.
+  wa_fieldcat-fieldname     = 'CURRENCY'.
+  wa_fieldcat-seltext_l     = wa_fieldcat-seltext_m = wa_fieldcat-seltext_l = 'Curr.'.
+  wa_fieldcat-ref_tabname   = 'MSEG'.
+  wa_fieldcat-ref_fieldname = 'WAERS'.
+  wa_fieldcat-ddictxt       = 'L'.
+  APPEND wa_fieldcat TO i_fieldcat.
+ENDFORM.                    "f_build_field_cat
+
+***************************Form fbuild_data.
+***************************What The Heck Is This
+FORM f_build_data  TABLES  lt_data STRUCTURE wa_print.
+*DATA:
+*  wa_check TYPE zs_print,
+*  lp_prev_index TYPE i,
+*  wlt_data TYPE zs_print,
+*  c_indicator TYPE i VALUE 1.
+*
+*
+* LOOP AT lt_data INTO wlt_data.
+*   IF sy-tabix > 1.
+*     lp_prev_index = sy-tabix - 1.
+*     READ TABLE lt_data INDEX lp_prev_index INTO wa_check.
+*     IF wlt_data-svbeln2 <> wa_check-svbeln2.
+*       c_indicator = c_indicator * -1.
+*     ENDIF.
+*   ENDIF.
+*
+*  IF c_indicator = 1.
+*     REFRESH i_color.
+*     CLEAR   i_color.
+*     i_color-color-col = cl_gui_resources=>list_col_negative.
+*     i_color-color-int = 0.
+*  ELSE.
+*     REFRESH i_color.
+*     CLEAR   i_color.
+*     i_color-color-col = cl_gui_resources=>list_col_positive.
+*     i_color-color-int = 0.
+*  ENDIF.
+*
+*  APPEND i_color.
+*  wlt_data-colinfo[] = i_color[].
+*  MODIFY lt_data FROM wlt_data.
+*  CLEAR wlt_data.
+* ENDLOOP.
+ENDFORM.                    " f_build_data
+
+
+*&--------------------------------------------------------------------*
+*&Form  print_alv
+*&--------------------------------------------------------------------*
+FORM print_alv.
+  DATA:
+    i_save VALUE 'U'.
+
+  CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY'
+    EXPORTING
+      i_callback_program = gs_extract1-report
+      is_layout          = i_layout
+      it_fieldcat        = i_fieldcat
+      i_save             = i_save
+      is_variant         = i_variant
+      it_events          = i_events[]
+      it_sort            = i_sort
+      is_print           = i_print
+    TABLES
+      t_outtab           = it_print
+    EXCEPTIONS
+      program_error      = 1
+      OTHERS             = 2.
+  IF sy-subrc <> 0.
+    MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+            WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+  ENDIF.
+ENDFORM.                    "
+
+*&---------------------------------------------------------------------*
+*&Form  TOP_OF_PAGE
+*&---------------------------------------------------------------------*
+FORM top_of_page.                                           "#EC CALLED
+  DATA: lflg_grid TYPE c,
+        lv_text LIKE sy-title.
+  IMPORT lflg_grid FROM MEMORY ID 'ALV_GRID_TOP_OF_PAGE'.
+  IF lflg_grid = yes.
+    CALL FUNCTION 'REUSE_ALV_COMMENTARY_WRITE'
+      EXPORTING
+        i_logo             = 'ENJOYSAP_LOGO'
+        it_list_commentary = i_list_top.
+*              I_END_OF_LIST_GRID = i_list_end.
+  ELSE.
+    PERFORM f_print_header USING text-100 lv_text space.
+  ENDIF.
+ENDFORM.                    "TOP_OF_PAGE
+
+*&---------------------------------------------------------------------*
+*&Form  PF_STATUS_SET
+*&---------------------------------------------------------------------*
+FORM pf_status_set USING rt_extab TYPE slis_t_extab.
+
+  SET PF-STATUS 'STATALV' EXCLUDING fcode.
+  SET TITLEBAR  'TITLEALV'.
+ENDFORM.                    "PF_STATUS_SET
+
+*&---------------------------------------------------------------------*
+*&Form  USER_COMMAND
+*&---------------------------------------------------------------------*
+FORM user_command USING r_ucomm
+                        i_selfield LIKE i_selfield.
+  DATA: t_answer TYPE char1.
+
+  CLEAR ok_code.
+  ok_code = r_ucomm.
+  CLEAR sy-ucomm.
+  CASE ok_code.
+    WHEN 'EXIT'.
+      LEAVE TO CURRENT TRANSACTION.
+"------------------- SCRIPT PRINT TO SMARTFORM ------------------
+*    WHEN 'PRINT'.
+*      CLEAR WA_PRINT.
+*      READ TABLE IT_PRINT INTO WA_PRINT WITH KEY SEL = 'X'.
+*
+*      SUBMIT ZFDW_TESTREPORTFORM WITH P_BANFN = WA_PRINT-BANFN AND RETURN.
+"------------------ END SCRIPT -----------------------
+
+"--------------- SCRIPT YANG BISA KONEK KE TCODE---------
+*     WHEN '&IC1'.
+*       CASE i_selfield-sel_tab_field.
+*
+*         WHEN '1-BANFN'.
+*           SET PARAMETER ID 'BAN' FIELD i_selfield-value.  "------- SET PARAMETER INDUPTAN DARI TCODE YANG AKAN DI PAKAI-------
+*           CALL TRANSACTION 'ME53N' AND SKIP FIRST SCREEN. "----- YG DALAM KUTIP TCODE -------
+*
+*          WHEN '1-MATNR'.
+*            SET PARAMETER ID 'MAT' FIELD i_selfield-value. "------- SET PARAMETER INDUPTAN DARI TCODE YANG AKAN DI PAKAI-------
+*            CALL TRANSACTION 'MM03' AND SKIP FIRST SCREEN. "----- YG DALAM KUTIP TCODE -------
+*        ENDCASE.
+
+
+"-------------------- END SCRIPT ---------------------------------------
+
+  ENDCASE.
+
+*    WHEN '&IC1'.
+*
+*      CASE i_selfield-sel_tab_field.
+*         WHEN '1-BANFN'. r_ucomm = 'PRDO'.
+*      ENDCASE.
+*
+*      CASE r_ucomm.
+*         WHEN 'PRDO'.
+*            SET PARAMETER ID 'BAN' FIELD i_selfield-value.
+*            CALL TRANSACTION 'ME53N' AND SKIP FIRST SCREEN. "------ KUTIP ADALAH TRANSAKSI CODE (TCODE) -----------
+*      ENDCASE.
+
+ENDFORM.                    "user_command
+
+*&---------------------------------------------------------------------*
+*&Form  END_OF_PAGE
+*&---------------------------------------------------------------------*
+FORM end_of_page.                                           "#EC CALLED
+  data: l_pos(3) type n value 0, l_foot(30) value '*** END OF PAGE ***'.
+  l_pos = ( sy-linsz / 2 ) - ( strlen( l_foot ) / 2 ).
+  uline.
+  write: /, at l_pos l_foot.
+
+ENDFORM.                    "END_OF_PAGE
+
+*&---------------------------------------------------------------------*
+*&Form  END_OF_LIST
+*&---------------------------------------------------------------------*
+FORM end_of_list.                                           "#EC CALLED
+  data: lv_page_count(3).
+  data: l_pos(3) type n value 0, l_foot(30) value '*** END OF REPORT ***'.
+  l_pos = ( sy-linsz / 2 ) - ( strlen( l_foot ) / 2 ).
+  uline.
+  write: /, at l_pos l_foot.
+  check sy-ucomm eq '&RNT'.
+  v_total = sy-pagno.
+
+  CALL FUNCTION 'REUSE_ALV_COMMENTARY_WRITE'
+    EXPORTING
+      i_logo             = 'ENJOYSAP_LOGO'
+      I_END_OF_LIST_GRID = i_list_end.
+ENDFORM.                    "END_OF_LIST
+*&---------------------------------------------------------------------*
+*&Form  f_print_header
+*&---------------------------------------------------------------------*
+FORM f_print_header  USING    p_title1 LIKE sy-title
+                              p_title2 LIKE sy-title
+                              p_title3 LIKE sy-title.
+
+  data: l_post1 type i, l_post2 type i, l_post3 type i, l_post4 type i, l_posin type i.
+
+  l_post1 = ( sy-linsz / 2 ) - ( strlen( p_title1 ) / 2 ).
+  l_post2 = ( sy-linsz / 2 ) - ( strlen( p_title2 ) / 2 ).
+  l_post3 = ( sy-linsz / 2 ) - ( strlen( p_title3 ) / 2 ).
+  l_post4 = l_post1 - 15.
+  l_posin = sy-linsz - 22.
+
+  write:  / 'Report  :', sy-cprog.
+  write at  l_post1 'Argo Manunggal Group'.
+  write at  l_posin 'Date :'.
+  write     sy-datum.
+
+  write:  / 'Cli/Sys :', sy-mandt, '/', sy-sysid.
+  write at  l_post4 sy-title.
+  write at: l_posin 'Time :'.
+  write     sy-uzeit.
+
+  write:  / 'UserID  :', sy-uname.
+  write at  l_posin 'Page :'.
+
+  if v_total is not initial.
+    write: (3) sy-pagno no-zero, 'of', (3) v_total.
+  else.
+    write (3) sy-pagno no-zero.
+  endif.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*&      Form  F_GETDT
+*---------- GET DATA DARI DATABASE ------------
+*&---------------------------------------------------------------------*
+FORM F_GETDT .
+
+  REFRESH: it_mara.
+
+  SELECT mara~matnr FROM mara
+    INNER JOIN mseg ON mara~matnr = mseg~matnr
+    INTO CORRESPONDING FIELDS OF TABLE it_mara
+    WHERE mara~matkl IN ('E015', 'E016', 'D006') AND
+          "mara~matnr IN p_matnr AND
+          mseg~werks = p_werks.
+*          mseg~budat_mkpf IN p_budat.
+
+
+ENDFORM.                    " F_GETDT
+*&---------------------------------------------------------------------*
+*&      Form  F_LSTDT
+*&---------------------------------------------------------------------*
+FORM F_LSTDT .
+
+  DATA: awal_bulan TYPE mbewh-lfmon,
+        tahun_sblm TYPE mbewh-lfgja,
+        it_zvbr2 TYPE ztvbr,
+        wa_zvbr2 TYPE zsvbr,
+        it_zvbr3 TYPE ztvbr,
+        wa_zvbr3 TYPE zsvbr,
+        it_stok2 TYPE zt_stok,
+        wa_stok2 TYPE zs_stok,
+        it_stok3 TYPE zt_stok,
+        wa_stok3 TYPE zs_stok,
+        it_mv_stok TYPE zt_stok,
+        wa_mv_stok TYPE zs_stok,
+        it_mv_stok2 TYPE zt_stok,
+        wa_mv_stok2 TYPE zs_stok,
+        it_mv_stok3 TYPE zt_stok,
+        wa_mv_stok3 TYPE zs_stok,
+        it_print2 TYPE zt_print,
+        wa_print2 TYPE zs_print.
+
+  REFRESH: it_zvbr,
+           it_zvbr2,
+           it_zvbr3,
+           it_stok,
+           it_stok2,
+           it_stok3,
+           it_mv_stok,
+           it_mv_stok2,
+           it_mv_stok3.
+
+"Inisialisasi it_mara
+  CLEAR : wa_zvbr, wa_print, awal_bulan, tahun_sblm.
+  SORT it_mara BY matnr ASCENDING.
+  DELETE ADJACENT DUPLICATES FROM it_mara COMPARING matnr.
+"Batas inisialisasi it_mara
+
+  awal_bulan = p_budat-low+4(2) - 1.
+  tahun_sblm = p_budat-low+0(4) - 1.
+
+"Menghitung total GR dan GI
+  SELECT matnr dmbtr shkzg menge bwart insmk xauto FROM mseg
+    INTO CORRESPONDING FIELDS OF TABLE it_zvbr
+    WHERE "matnr IN p_matnr AND
+          werks = p_werks AND
+          budat_mkpf IN p_budat.
+
+  SORT it_zvbr BY matnr ASCENDING.
+  it_zvbr2 = it_zvbr.
+  DELETE ADJACENT DUPLICATES FROM it_zvbr COMPARING matnr.
+
+  LOOP AT it_zvbr INTO wa_zvbr.
+    wa_zvbr3-matnr = wa_zvbr-matnr.
+
+    LOOP AT it_zvbr2 INTO wa_zvbr2 WHERE matnr = wa_zvbr-matnr.
+*        IF wa_zvbr2-bwart <> '311'.
+          IF wa_zvbr2-shkzg = 'S'.
+            wa_zvbr3-receipt_qty = wa_zvbr3-receipt_qty + wa_zvbr2-menge.
+            wa_zvbr3-receipt_val = wa_zvbr3-receipt_val + wa_zvbr2-dmbtr.
+          ELSEIF wa_zvbr2-shkzg = 'H'.
+            wa_zvbr3-issue_qty = wa_zvbr3-issue_qty - wa_zvbr2-menge.
+            wa_zvbr3-issue_val = wa_zvbr3-issue_val - wa_zvbr2-dmbtr.
+          ENDIF.
+*        ENDIF.
+    ENDLOOP.
+
+    APPEND wa_zvbr3 TO it_zvbr3.
+    CLEAR: wa_zvbr, wa_zvbr2, wa_zvbr3.
+  ENDLOOP.
+
+  CLEAR it_zvbr.
+  it_zvbr = it_zvbr3.
+"Batas hitung total GR & GI
+
+"Mencari stok awal, seandainya tidak ada GR/GI terakhir dalam beberapa bulan
+  CLEAR tgl_1.
+  CONCATENATE p_budat-low+0(6) '01' INTO tgl_1.
+
+  SELECT matnr shkzg menge dmbtr xauto bwart FROM mseg
+    INTO CORRESPONDING FIELDS OF TABLE it_stok
+    WHERE werks = p_werks AND
+          "matnr IN p_matnr AND
+          budat_mkpf < tgl_1.
+
+  SORT it_stok BY matnr ASCENDING.
+  it_stok2 = it_stok.
+  DELETE ADJACENT DUPLICATES FROM it_stok COMPARING matnr.
+
+  LOOP AT it_stok INTO wa_stok.
+    wa_stok3-matnr = wa_stok-matnr.
+
+    LOOP AT it_stok2 INTO wa_stok2 WHERE matnr = wa_stok-matnr.
+*      IF wa_stok2-bwart <> '311'.
+        IF wa_stok2-shkzg = 'S'.
+           wa_stok3-menge = wa_stok3-menge + wa_stok2-menge.
+           wa_stok3-dmbtr = wa_stok3-dmbtr + wa_stok2-dmbtr.
+        ELSEIF wa_stok2-shkzg = 'H'.
+          wa_stok3-menge = wa_stok3-menge - wa_stok2-menge.
+          wa_stok3-dmbtr = wa_stok3-dmbtr - wa_stok2-dmbtr.
+        ENDIF.
+*      ENDIF.
+    ENDLOOP.
+
+    APPEND wa_stok3 TO it_stok3.
+    CLEAR: wa_stok, wa_stok2, wa_stok3.
+  ENDLOOP.
+
+  CLEAR it_stok.
+  it_stok = it_stok3.
+" Batas mencari stok awal
+
+"Mencari stok awal dari bulan berjalan
+  SELECT matnr shkzg menge dmbtr xauto bwart FROM mseg
+    INTO CORRESPONDING FIELDS OF TABLE it_mv_stok
+    WHERE werks = p_werks AND
+          "matnr IN p_matnr AND
+*          budat_mkpf BETWEEN tgl_1 AND p_budat-low.
+          budat_mkpf >= tgl_1 AND budat_mkpf < p_budat-low.
+
+  SORT it_mv_stok BY matnr ASCENDING.
+  it_mv_stok2 = it_mv_stok.
+  DELETE ADJACENT DUPLICATES FROM it_mv_stok COMPARING matnr.
+
+  LOOP AT it_mv_stok INTO wa_mv_stok.
+    wa_mv_stok3-matnr = wa_mv_stok-matnr.
+
+    LOOP AT it_mv_stok2 INTO wa_mv_stok2 WHERE matnr = wa_mv_stok-matnr.
+*      IF wa_mv_stok2-bwart <> '311'.
+        IF wa_mv_stok2-shkzg = 'S'.
+          wa_mv_stok3-menge = wa_mv_stok3-menge + wa_mv_stok2-menge.
+          wa_mv_stok3-dmbtr = wa_mv_stok3-dmbtr + wa_mv_stok2-dmbtr.
+        ELSEIF wa_mv_stok2-shkzg = 'H'.
+          wa_mv_stok3-menge = wa_mv_stok3-menge - wa_mv_stok2-menge.
+          wa_mv_stok3-dmbtr = wa_mv_stok3-dmbtr - wa_mv_stok2-dmbtr.
+        ENDIF.
+*      ENDIF.
+    ENDLOOP.
+
+    APPEND wa_mv_stok3 TO it_mv_stok3.
+    CLEAR: wa_mv_stok, wa_mv_stok2, wa_mv_stok3.
+  ENDLOOP.
+
+  CLEAR it_mv_stok.
+  it_mv_stok = it_mv_stok3.
+"Batas mencari stok awal dalam bulan berjalan
+
+  LOOP AT it_mara INTO wa_mara.
+
+    wa_print-werks = p_werks.
+    wa_print-matnr = wa_mara-matnr.
+
+    SELECT SINGLE maktx FROM makt
+      INTO wa_print-maktx
+      WHERE matnr = wa_mara-matnr.
+
+    SELECT SINGLE meins FROM mara
+      INTO wa_print-meins
+      WHERE matnr = wa_mara-matnr.
+
+    wa_print-start = p_budat-low.
+    wa_print-finish = p_budat-high.
+
+    IF p_budat-low+4(2) = 01.
+      SELECT SINGLE lbkum salk3 FROM mbewh
+        INTO (wa_print-stok_awal, wa_print-open_value)
+        WHERE matnr = wa_mara-matnr AND
+              lfmon = 12 AND
+              lfgja = tahun_sblm AND
+              bwkey = p_werks.
+    ELSE.
+       SELECT SINGLE lbkum salk3 FROM mbewh
+        INTO (wa_print-stok_awal, wa_print-open_value)
+        WHERE matnr = wa_mara-matnr AND
+          lfmon = awal_bulan AND
+          lfgja = p_budat-low+0(4) AND
+          bwkey = p_werks.
+    ENDIF.
+
+    IF wa_print-stok_awal = 0 AND wa_print-open_value = 0.
+      READ TABLE it_stok INTO wa_stok WITH KEY matnr = wa_mara-matnr.
+
+      wa_print-stok_awal = wa_stok-menge.
+      wa_print-open_value = wa_stok-dmbtr.
+    ENDIF.
+
+    IF p_budat-low <> tgl_1.
+        READ TABLE it_mv_stok INTO wa_mv_stok WITH KEY matnr = wa_mara-matnr.
+
+        wa_print-stok_awal = wa_print-stok_awal + wa_mv_stok-menge.
+        wa_print-open_value = wa_print-open_value + wa_mv_stok-dmbtr.
+    ENDIF.
+
+    READ TABLE it_zvbr INTO wa_zvbr WITH KEY matnr = wa_mara-matnr.
+
+    wa_print-receipt_qty = wa_zvbr-receipt_qty.
+    wa_print-receipt_val = wa_zvbr-receipt_val.
+    wa_print-issue_qty = wa_zvbr-issue_qty.
+    wa_print-issue_val = wa_zvbr-issue_val.
+
+    wa_print-cls_stck  = wa_print-stok_awal + wa_print-receipt_qty + wa_print-issue_qty .
+    wa_print-cls_val = wa_print-open_value + wa_print-receipt_val + wa_print-issue_val.
+
+    IF wa_print-meins = 'G'.
+      wa_print-average = wa_print-cls_val / wa_print-cls_stck * 1000.
+    ELSE.
+      wa_print-average = wa_print-cls_val / wa_print-cls_stck.
+    ENDIF.
+
+
+    SELECT SINGLE waers FROM mseg
+      INTO wa_print-currency
+      WHERE matnr = wa_mara-matnr AND
+            werks = p_werks.
+
+    APPEND wa_print TO it_print.
+    CLEAR: wa_print, wa_mara, wa_zvbr, wa_stok, wa_mv_stok.
+  ENDLOOP.
+
+  "Menghilangkan nilai average = 0
+  CLEAR it_print2.
+  LOOP AT it_print INTO wa_print.
+    IF wa_print-average <> 0.
+      wa_print2-werks = wa_print-werks.
+      wa_print2-matnr = wa_print-matnr.
+      wa_print2-maktx = wa_print-maktx.
+      wa_print2-meins = wa_print-meins.
+      wa_print2-start = wa_print-start.
+      wa_print2-finish = wa_print-finish.
+      wa_print2-stok_awal = wa_print-stok_awal.
+      wa_print2-open_value = wa_print-open_value.
+      wa_print2-receipt_qty = wa_print-receipt_qty.
+      wa_print2-receipt_val = wa_print-receipt_val.
+      wa_print2-issue_qty = wa_print-issue_qty.
+      wa_print2-issue_val = wa_print-issue_val.
+      wa_print2-cls_stck = wa_print-cls_stck.
+      wa_print2-cls_val = wa_print-cls_val.
+      wa_print2-currency = wa_print-currency.
+      wa_print2-average = wa_print-average.
+
+      APPEND wa_print2 TO it_print2.
+      CLEAR wa_print2.
+    ENDIF.
+  ENDLOOP.
+
+  CLEAR it_print.
+  it_print = it_print2.
+ENDFORM.                    " F_LSTDT

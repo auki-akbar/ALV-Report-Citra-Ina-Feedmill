@@ -1,0 +1,70 @@
+*&---------------------------------------------------------------------*
+*& Report ZQCR_CIF001
+*&---------------------------------------------------------------------*
+*&
+*&---------------------------------------------------------------------*
+REPORT ZQCR_CIF001.
+
+"------- INPUTAN BOX YANG TAMPIL DI SCREEN
+SELECTION-SCREEN BEGIN OF BLOCK HEAD1 WITH FRAME TITLE text-001.
+PARAMETERS:
+  P_WERK TYPE QALS-WERK OBLIGATORY.
+
+SELECT-OPTIONS:
+  P_BUDAT FOR QAVE-VDATUM,
+  RSTELDAT FOR QALS-BUDAT,
+  SELMATNR FOR QALS-SELMATNR.
+
+"PARAMETERS: p_eqktu TYPE eqkt-eqktu.
+SELECTION-SCREEN END OF BLOCK HEAD1.
+
+SELECTION-SCREEN BEGIN OF BLOCK HEAD2 WITH FRAME TITLE text-002.
+PARAMETERS:
+            P_RAD1 RADIOBUTTON GROUP RB1 DEFAULT 'X',
+            P_RAD2 RADIOBUTTON GROUP RB1,
+            P_RAD3 RADIOBUTTON GROUP RB1,
+            P_RAD4 RADIOBUTTON GROUP RB1.
+
+SELECTION-SCREEN END OF BLOCK HEAD2.
+
+START-OF-SELECTION.
+
+    IF P_RAD1 = 'X'.
+      SUBMIT ZQCR_CIF001A
+              WITH P_WERK EQ P_WERK
+              WITH P_BUDAT    IN P_BUDAT
+              WITH RSTELDAT   IN RSTELDAT
+              WITH SELMATNR   IN SELMATNR
+*              WITH P_MBLNR    IN P_MBLNR
+                AND RETURN.
+    ENDIF.
+
+    IF P_RAD2 = 'X'.
+      SUBMIT ZQCR_CIF001B
+              WITH P_WERK EQ P_WERK
+              WITH P_BUDAT    IN P_BUDAT
+              WITH RSTELDAT   IN RSTELDAT
+              WITH SELMATNR   IN SELMATNR
+*              WITH P_MBLNR    IN P_MBLNR
+                AND RETURN.
+    ENDIF.
+
+    IF P_RAD3 = 'X'.
+      SUBMIT ZQCR_CIF001C
+              WITH P_WERK EQ P_WERK
+              WITH P_BUDAT    IN P_BUDAT
+              WITH RSTELDAT   IN RSTELDAT
+              WITH SELMATNR   IN SELMATNR
+*              WITH P_MBLNR    IN P_MBLNR
+                AND RETURN.
+    ENDIF.
+
+    IF P_RAD4 = 'X'.
+      SUBMIT ZQCR_CIF001D
+              WITH P_WERK EQ P_WERK
+              WITH P_BUDAT    IN P_BUDAT
+              WITH RSTELDAT   IN RSTELDAT
+              WITH SELMATNR   IN SELMATNR
+*              WITH P_MBLNR    IN P_MBLNR
+                AND RETURN.
+    ENDIF.

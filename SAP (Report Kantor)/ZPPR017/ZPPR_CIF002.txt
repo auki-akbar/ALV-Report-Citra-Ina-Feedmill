@@ -1,0 +1,46 @@
+*&---------------------------------------------------------------------*
+*& Report ZPPR_CIF002
+*&---------------------------------------------------------------------*
+REPORT ZPPR_CIF002.
+
+TABLES: MSEG.
+
+SELECTION-SCREEN BEGIN OF BLOCK HEAD1 WITH FRAME TITLE text-001.
+PARAMETERS:
+  P_WERKS TYPE MSEG-WERKS OBLIGATORY DEFAULT 'E201'.
+
+SELECT-OPTIONS:
+  P_BUDAT FOR MSEG-BUDAT_MKPF OBLIGATORY.
+
+SELECTION-SCREEN END OF BLOCK HEAD1.
+
+SELECTION-SCREEN BEGIN OF BLOCK HEAD2 WITH FRAME TITLE text-002.
+PARAMETERS:
+            P_RAD1 RADIOBUTTON GROUP RB1 DEFAULT 'X',
+            P_RAD2 RADIOBUTTON GROUP RB1,
+            P_RAD3 RADIOBUTTON GROUP RB1.
+
+SELECTION-SCREEN END OF BLOCK HEAD2.
+
+START-OF-SELECTION.
+
+    IF P_RAD1 = 'X'.
+      SUBMIT ZPPR_CIF002A
+              WITH P_WERKS EQ P_WERKS
+              WITH P_BUDAT IN P_BUDAT
+                AND RETURN.
+    ENDIF.
+
+    IF P_RAD2 = 'X'.
+      SUBMIT ZPPR_CIF002B
+              WITH P_WERKS EQ P_WERKS
+              WITH P_BUDAT IN P_BUDAT
+                AND RETURN.
+    ENDIF.
+
+    IF P_RAD3 = 'X'.
+      SUBMIT ZPPR_CIF002C
+              WITH P_WERKS EQ P_WERKS
+              WITH P_BUDAT IN P_BUDAT
+                AND RETURN.
+    ENDIF.

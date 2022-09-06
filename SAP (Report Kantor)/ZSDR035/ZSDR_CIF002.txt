@@ -1,0 +1,772 @@
+*&---------------------------------------------------------------------*
+*& Report ZSDR_CIF002
+*&---------------------------------------------------------------------*
+*&
+*&---------------------------------------------------------------------*
+REPORT ZSDR_CIF002.
+
+tables: vbrp, vbrk.
+
+constants:
+  yes        value 'X',
+  no         value space,
+  c_vrsio(3) value '000'.
+
+data:
+  i_layout     type slis_layout_alv,
+  i_events     type slis_t_event,
+  i_fieldcat   type slis_t_fieldcat_alv,
+  i_print      type slis_print_alv,
+  i_list_top   type slis_t_listheader,
+  i_list_end   type slis_t_listheader,
+  i_sort       type slis_t_sortinfo_alv,
+  i_color      type lvc_t_scol with header line,
+  wa_fieldcat  like line of i_fieldcat,
+  i_variant    like disvariant,
+  i_selfield   type slis_selfield,
+  fcode        type table of sy-ucomm,
+  data_count   type i,
+  header_count type i,
+  v_total      type sy-pagno,
+  urut         type i,
+  vnfield      type char20,
+  vdfield      type char30.
+
+data: gt_ekko     like ekko occurs 0,
+      gs_extract1 like disextract,
+      gs_extract2 like disextract.
+
+types:begin of zs_data,
+        perd1   type sy-datum,
+        perd2   type sy-datum,
+        kunag   type kunnr,
+        name1   type name1,
+        kunnr   type kunnr,
+        name2   type name1,
+        matnr   type matnr,
+        arktx   type arktx,
+        vrkme   type vrkme,
+        waerk   type waerk,
+
+        fkmg1   type fkimg,
+        ntwr1   type kwert,
+        fkmg2   type fkimg,
+        ntwr2   type kwert,
+        fkmg3   type fkimg,
+        ntwr3   type kwert,
+        fkmg4   type fkimg,
+        ntwr4   type kwert,
+        fkmg5   type fkimg,
+        ntwr5   type kwert,
+        fkmg6   type fkimg,
+        ntwr6   type kwert,
+        fkmg7   type fkimg,
+        ntwr7   type kwert,
+        fkmg8   type fkimg,
+        ntwr8   type kwert,
+        fkmg9   type fkimg,
+        ntwr9   type kwert,
+        fkmg10  type fkimg,
+        ntwr10  type kwert,
+        fkmg11  type fkimg,
+        ntwr11  type kwert,
+        fkmg12  type fkimg,
+        ntwr12  type kwert,
+
+        fkimg   type fkimg,
+        netwr   type kwert,
+        line    type string,
+        colinfo type lvc_t_scol,
+      end of zs_data,
+
+      begin of zs_grpy,
+        coun  type char2,
+        moyr  type char6,
+        fcmnr type fcmnr,
+        fcktx type fcktx,
+        fcltx type fcltx,
+        year  type char4,
+      end of zs_grpy.
+
+types:begin of zs_mtnr.
+        include structure vbrp.
+        types: fkdat type fkdat.
+        types: kunag type kunnr.
+        types: kunnr type kunnr.
+        types: line type string.
+types:end of zs_mtnr.
+
+data: t_data type table of zs_data,
+      t_vbrk type table of vbrk,
+      t_mtnr type table of zs_mtnr,
+      t_mtnx type table of zs_mtnr,
+      t_mtny type table of zs_mtnr,
+      t_mtnz type table of zs_mtnr,
+      t_grpy type table of zs_grpy,
+      dest TYPE string,
+      it_dest like standard table of dest.
+
+data: w_data type zs_data,
+      w_vbrk type vbrk,
+      w_mtnr type zs_mtnr,
+      w_mtnz type zs_mtnr,
+      w_mtny type zs_mtnr,
+      w_grpy type zs_grpy.
+
+initialization.
+  call function 'REUSE_ALV_EXTRACT_AT_INIT'
+    changing
+      cs_extract1 = gs_extract1
+      cs_extract2 = gs_extract2.
+
+  selection-screen begin of block prg with frame title text-001.
+  parameters:
+    p_vkorg type vkorg obligatory DEFAULT 'E201'.
+  select-options:
+    p_fkdat for vbrk-fkdat obligatory,
+    p_kunag for vbrk-kunag,
+    p_kunnr for vbrk-kunag,
+    p_matnr for vbrp-matnr.
+  selection-screen end of block prg.
+
+start-of-selection.
+  perform get_data.
+  perform set_data.
+
+  describe table t_data lines data_count.
+  if data_count > 0.
+    call function 'SAPGUI_PROGRESS_INDICATOR'
+      exporting
+        text = 'Preparing report.......'.
+
+    perform f_layout_init using i_layout.
+    perform f_eventtab_build using i_events[].
+    i_variant-report = sy-repid.
+    perform f_print_control.
+    perform f_build_header_list.
+    perform f_build_sort.
+    perform f_build_fieldcat.
+    perform f_build_data tables t_data.
+    perform print_alv.
+  else.
+*      MESSAGE i000(z02).
+    message 'Data not found' type 'I'.
+  endif.
+
+form f_layout_init  using   p_layout type slis_layout_alv.
+  p_layout-detail_popup       = yes.
+  p_layout-numc_sum           = yes.
+  p_layout-colwidth_optimize  = no.
+  p_layout-zebra              = yes.
+  p_layout-get_selinfos        = yes.
+  p_layout-coltab_fieldname   = 'COLINFO'.
+  p_layout-subtotals_text     = 'SubTotal'.
+  p_layout-totals_text        = 'Total'.
+endform.
+
+form f_eventtab_build  using p_events type slis_t_event.
+  data:
+    ls_event type slis_alv_event.
+
+  call function 'REUSE_ALV_EVENTS_GET'
+    exporting
+      i_list_type = 0
+    importing
+      et_events   = p_events.
+
+  read table p_events with key name = slis_ev_end_of_page into ls_event.
+  if sy-subrc = 0.
+    move slis_ev_end_of_page to: ls_event-form, ls_event-name.
+    append ls_event to p_events.
+  endif.
+
+  read table p_events with key name = slis_ev_top_of_list into ls_event.
+  if sy-subrc = 0.
+    move slis_ev_top_of_list to: ls_event-form, ls_event-name.
+    append ls_event to p_events.
+  endif.
+
+  read table p_events with key name = slis_ev_user_command into ls_event.
+  if sy-subrc = 0.
+    move slis_ev_user_command to: ls_event-form, ls_event-name.
+    append ls_event to p_events.
+  endif.
+endform.
+
+form f_print_control.
+  i_print-no_print_selinfos      = yes.
+  i_print-no_print_listinfos     = yes.
+  i_print-reserve_lines          = 0.
+  i_print-no_change_print_params = yes.
+endform.
+
+form f_build_header_list.
+  data: lwa_list_top like line of i_list_top,
+        lv_text      like sy-title,
+        gs_line      type slis_listheader,
+        vtime        type char12,
+        vtitle       type char50.
+
+  refresh i_list_top.
+  clear lwa_list_top.
+  lwa_list_top-typ = 'H'.
+  lwa_list_top-key = no.
+  lwa_list_top-info = sy-title.
+  append lwa_list_top to i_list_top.
+endform.
+
+form f_build_sort .
+  data: l_sort type slis_sortinfo_alv.
+
+
+  define def_sort.
+    CLEAR l_sort.
+*  Sort position
+    l_sort-spos      = &1.
+    l_sort-fieldname = &2.
+
+*  Sort by ascending
+    l_sort-up        = yes.
+
+*  Subtot key
+    l_sort-subtot    = yes.
+
+*  Separate Line between Group
+    l_sort-group     = 'UL'.
+    APPEND l_sort TO i_sort.
+  end-of-definition.
+endform.
+
+form f_build_fieldcat.
+  refresh i_fieldcat.
+
+  clear wa_fieldcat.
+  wa_fieldcat-fieldname     = 'PERD1'.
+  wa_fieldcat-seltext_l     = wa_fieldcat-seltext_m = wa_fieldcat-seltext_l = 'period from'.
+  wa_fieldcat-just          = 'C'.
+  append wa_fieldcat to i_fieldcat.
+
+  clear wa_fieldcat.
+  wa_fieldcat-fieldname     = 'PERD2'.
+  wa_fieldcat-seltext_l     = wa_fieldcat-seltext_m = wa_fieldcat-seltext_l = 'period from'.
+  wa_fieldcat-just          = 'C'.
+  append wa_fieldcat to i_fieldcat.
+
+  clear wa_fieldcat.
+  wa_fieldcat-fieldname     = 'KUNNR'.
+  wa_fieldcat-seltext_l     = wa_fieldcat-seltext_m = wa_fieldcat-seltext_l = 'Sls Emp'.
+  wa_fieldcat-just          = 'C'.
+  append wa_fieldcat to i_fieldcat.
+
+  clear wa_fieldcat.
+  wa_fieldcat-fieldname     = 'NAME2'.
+  wa_fieldcat-seltext_l     = wa_fieldcat-seltext_m = wa_fieldcat-seltext_l = 'Sales Employee'.
+  wa_fieldcat-just          = 'L'.
+  append wa_fieldcat to i_fieldcat.
+
+  clear wa_fieldcat.
+  wa_fieldcat-fieldname     = 'KUNAG'.
+  wa_fieldcat-seltext_l     = wa_fieldcat-seltext_m = wa_fieldcat-seltext_l = 'Customer'.
+  wa_fieldcat-just          = 'C'.
+  append wa_fieldcat to i_fieldcat.
+
+  clear wa_fieldcat.
+  wa_fieldcat-fieldname     = 'NAME1'.
+  wa_fieldcat-seltext_l     = wa_fieldcat-seltext_m = wa_fieldcat-seltext_l = 'Customer Name'.
+  wa_fieldcat-just          = 'L'.
+  append wa_fieldcat to i_fieldcat.
+
+  clear wa_fieldcat.
+  wa_fieldcat-fieldname     = 'MATNR'.
+  wa_fieldcat-seltext_l     = wa_fieldcat-seltext_m = wa_fieldcat-seltext_l = 'Material'.
+  wa_fieldcat-just          = 'L'.
+  append wa_fieldcat to i_fieldcat.
+
+  clear wa_fieldcat.
+  wa_fieldcat-fieldname     = 'ARKTX'.
+  wa_fieldcat-seltext_l     = wa_fieldcat-seltext_m = wa_fieldcat-seltext_l = 'Description'.
+  wa_fieldcat-just          = 'L'.
+  append wa_fieldcat to i_fieldcat.
+
+  clear wa_fieldcat.
+  wa_fieldcat-fieldname     = 'VRKME'.
+  wa_fieldcat-seltext_l     = wa_fieldcat-seltext_m = wa_fieldcat-seltext_l = 'UoM'.
+  wa_fieldcat-just          = 'C'.
+  append wa_fieldcat to i_fieldcat.
+
+  clear wa_fieldcat.
+  wa_fieldcat-fieldname     = 'WAERK'.
+  wa_fieldcat-seltext_l     = wa_fieldcat-seltext_m = wa_fieldcat-seltext_l = 'Curr'.
+  wa_fieldcat-just          = 'C'.
+  append wa_fieldcat to i_fieldcat.
+
+  loop at t_grpy into w_grpy.
+    clear: vnfield, vdfield, wa_fieldcat.
+    concatenate 'FKMG' w_grpy-coun into vnfield.
+    concatenate 'Qty' w_grpy-fcktx w_grpy-year into vdfield separated by space.
+    wa_fieldcat-fieldname     = vnfield.
+    wa_fieldcat-seltext_l     = wa_fieldcat-seltext_m = wa_fieldcat-seltext_l = vdfield.
+    wa_fieldcat-qfieldname    = 'VRKME'.
+    wa_fieldcat-just          = 'R'.
+    append wa_fieldcat to i_fieldcat.
+
+    clear: vnfield, vdfield, wa_fieldcat.
+    concatenate 'NTWR' w_grpy-coun into vnfield.
+    concatenate 'Val.' w_grpy-fcktx w_grpy-year into vdfield separated by space.
+    wa_fieldcat-fieldname     = vnfield.
+    wa_fieldcat-seltext_l     = wa_fieldcat-seltext_m = wa_fieldcat-seltext_l = vdfield.
+    wa_fieldcat-cfieldname    = 'WAERK'.
+    wa_fieldcat-just          = 'R'.
+    append wa_fieldcat to i_fieldcat.
+    clear w_grpy.
+  endloop.
+
+  clear wa_fieldcat.
+  wa_fieldcat-fieldname     = 'FKIMG'.
+  wa_fieldcat-seltext_l     = wa_fieldcat-seltext_m = wa_fieldcat-seltext_l = 'Grand Qty'.
+  wa_fieldcat-qfieldname    = 'VRKME'.
+  wa_fieldcat-just          = 'R'.
+  append wa_fieldcat to i_fieldcat.
+
+  clear wa_fieldcat.
+  wa_fieldcat-fieldname     = 'NETWR'.
+  wa_fieldcat-seltext_l     = wa_fieldcat-seltext_m = wa_fieldcat-seltext_l = 'Grand Value'.
+  wa_fieldcat-cfieldname    = 'WAERK'.
+  wa_fieldcat-just          = 'R'.
+  append wa_fieldcat to i_fieldcat.
+
+  clear wa_fieldcat.
+  wa_fieldcat-fieldname     = 'LINE'.
+  wa_fieldcat-seltext_l     = wa_fieldcat-seltext_m = wa_fieldcat-seltext_l = 'Destination'.
+  append wa_fieldcat to i_fieldcat.
+
+endform.
+
+form f_build_data  tables  lt_data structure w_data.
+endform.
+
+form print_alv.
+  data:
+    i_save value 'A'.
+
+  i_layout-colwidth_optimize  = 'X'.
+  call function 'REUSE_ALV_GRID_DISPLAY'
+    exporting
+      i_callback_program = gs_extract1-report
+      is_layout          = i_layout
+      it_fieldcat        = i_fieldcat
+      i_save             = i_save
+      is_variant         = i_variant
+      it_events          = i_events[]
+      it_sort            = i_sort
+      is_print           = i_print
+    tables
+      t_outtab           = t_data
+    exceptions
+      program_error      = 1
+      others             = 2.
+  if sy-subrc <> 0.
+    message id sy-msgid type sy-msgty number sy-msgno
+            with sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+  endif.
+endform.
+
+form top_of_page.                                           "#EC CALLED
+  data: lflg_grid type c,
+        lv_text   like sy-title.
+  import lflg_grid from memory id 'ALV_GRID_TOP_OF_PAGE'.
+  if lflg_grid = yes.
+    call function 'REUSE_ALV_COMMENTARY_WRITE'
+      exporting
+        i_logo             = 'TRVPICTURE00'
+        it_list_commentary = i_list_top.
+*                I_END_OF_LIST_GRID = i_list_end.
+  else.
+    perform f_print_header using text-100 lv_text space.
+  endif.
+endform.
+
+form pf_status_set using rt_extab type slis_t_extab.
+  set pf-status 'STATALV' excluding fcode.
+  set titlebar  'TITLEALV'.
+endform.
+
+form user_command using r_ucomm
+                      i_selfield like i_selfield.
+  data: ok_code type sy-ucomm.
+  ok_code = r_ucomm.
+  clear: sy-ucomm, w_data.
+*
+*  case ok_code.
+*    when '&IC1'.
+*      case i_selfield-sel_tab_field.
+**        when '1-VBELN'.
+**          set parameter id 'VF' field i_selfield-value.
+**          call transaction 'VF03' and skip first screen.
+*      endcase.
+*  endcase.
+endform.
+
+form end_of_page.                                           "#EC CALLED
+  data: l_pos(3)   type n value 0, l_foot(30) value '*** END OF PAGE ***'.
+  l_pos = ( sy-linsz / 2 ) - ( strlen( l_foot ) / 2 ).
+  uline.
+  write: /, at l_pos l_foot.
+endform.
+
+form end_of_list.                                           "#EC CALLED
+  data: lv_page_count(3).
+  data: l_pos(3)   type n value 0, l_foot(30) value '*** END OF REPORT ***'.
+  l_pos = ( sy-linsz / 2 ) - ( strlen( l_foot ) / 2 ).
+  uline.
+  write: /, at l_pos l_foot.
+  check sy-ucomm eq '&RNT'.
+  v_total = sy-pagno.
+
+  call function 'REUSE_ALV_COMMENTARY_WRITE'
+    exporting
+      i_logo             = 'ENJOYSAP_LOGO'
+      i_end_of_list_grid = i_list_end.
+endform.
+
+form f_print_header  using    p_title1 like sy-title
+                            p_title2 like sy-title
+                            p_title3 like sy-title.
+
+  data: l_post1 type i, l_post2 type i, l_post3 type i, l_post4 type i, l_posin type i.
+
+  l_post1 = ( sy-linsz / 2 ) - ( strlen( p_title1 ) / 2 ).
+  l_post2 = ( sy-linsz / 2 ) - ( strlen( p_title2 ) / 2 ).
+  l_post3 = ( sy-linsz / 2 ) - ( strlen( p_title3 ) / 2 ).
+  l_post4 = l_post1 - 15.
+  l_posin = sy-linsz - 22.
+
+  write:  / 'Report  :', sy-cprog.
+  write at  l_post1 'PT. FUMIRA'.
+  write at  l_posin 'Date :'.
+  write     sy-datum.
+
+  write:  / 'Cli/Sys :', sy-mandt, '/', sy-sysid.
+  write at  l_post4 sy-title.
+  write at: l_posin 'Time :'.
+  write     sy-uzeit.
+
+  write:  / 'UserID  :', sy-uname.
+  write at  l_posin 'Page :'.
+
+  if v_total is not initial.
+    write: (3) sy-pagno no-zero, 'of', (3) v_total.
+  else.
+    write (3) sy-pagno no-zero.
+  endif.
+endform.
+*&---------------------------------------------------------------------*
+*& Form GET_DATA
+*&---------------------------------------------------------------------*
+form get_data.
+  clear: w_data, w_vbrk, w_mtnr, w_mtnz, w_grpy, urut.
+  refresh : t_data, t_vbrk, t_mtnr, t_mtnx, t_mtnz, t_grpy.
+
+  select * from vbrk
+    into table t_vbrk
+    where vkorg = p_vkorg and
+          fkdat in p_fkdat and
+          kunag in p_kunag and
+          fksto <> 'X' and
+          fkart = 'ZINV'.
+
+  if t_vbrk is not initial.
+    select vbrk~vbeln vbrk~kunag vbpa~kunnr vbrp~matnr vbrp~arktx vbrp~fkimg vbrp~netwr vbrp~vrkme vbrp~waerk vbrk~fkdat
+      from vbrk inner join vbrp on vbrk~vbeln = vbrp~vbeln inner join vbpa on vbrk~vbeln = vbpa~vbeln
+      into corresponding fields of table t_mtnr
+      for all entries in t_vbrk
+      where vbrk~vbeln = t_vbrk-vbeln and
+            vbrp~matnr in p_matnr and
+            vbpa~kunnr in p_kunnr and
+            vbpa~parvw = 'ZS'.
+  endif.
+endform.
+*&---------------------------------------------------------------------*
+*& Form SET_DATA
+*&---------------------------------------------------------------------*
+form set_data.
+
+  data : vgbel type likp-vbeln,
+         vgpos type lips-posnr,
+         name type thead-tdname,
+         t_line type standard table of tline,
+         w_line like line of t_line.
+
+  if t_mtnr is not initial.
+*    t_mtnz[]  = t_mtnr.
+
+    clear: vgbel, vgpos, name.
+    loop at t_mtnr into w_mtnr.
+      select single vgbel vgpos from vbrp
+        into ( vgbel, vgpos )
+        where vbeln = w_mtnr-vbeln.
+
+      select single likp~vbeln from likp
+        inner join lips on lips~vbeln = likp~vbeln
+        into name
+        where lips~vbeln = vgbel and
+              lips~posnr = vgpos.
+
+      clear: t_line, w_line.
+      CALL FUNCTION 'READ_TEXT'
+        EXPORTING
+          CLIENT                        = SY-MANDT
+          ID                            = 'Z001'
+          LANGUAGE                      = sy-langu
+          NAME                          = name
+          OBJECT                        = 'VBBK'
+*         ARCHIVE_HANDLE                = 0
+*         LOCAL_CAT                     = ' '
+*        IMPORTING
+*         HEADER                        =
+*         OLD_LINE_COUNTER              =
+        TABLES
+          LINES                         = t_line
+        EXCEPTIONS
+         ID                            = 1
+         LANGUAGE                      = 2
+         NAME                          = 3
+         NOT_FOUND                     = 4
+         OBJECT                        = 5
+         REFERENCE_CHECK               = 6
+         WRONG_ACCESS_TO_ARCHIVE       = 7
+         OTHERS                        = 8
+                .
+
+      loop at t_line into w_line.
+        if w_mtnr-line is initial.
+          w_mtnr-line = w_line.
+        else.
+          concatenate w_mtnr-line w_line into w_mtnr-line.
+        endif.
+        replace all occurrences of '*' in : w_mtnr-line with ''.
+       " condense w_mtnz-line no-gaps.
+      endloop.
+
+      modify t_mtnr from w_mtnr transporting line.
+      clear: w_mtnr, t_line, w_line, name,  vgbel, vgpos.
+    endloop.
+
+    sort t_mtnr by kunnr kunag matnr line.
+    t_mtnz[] = t_mtnr.
+    delete adjacent duplicates from t_mtnr comparing kunnr kunag matnr line.
+
+    perform group_mon_year.
+
+    loop at t_mtnr into w_mtnr.
+      w_data-perd1  = p_fkdat-low.
+      w_data-perd2  = p_fkdat-high.
+
+      w_data-kunag  = w_mtnr-kunag.
+      select single name1 from kna1
+        into w_data-name1
+        where kunnr = w_data-kunag.
+
+      w_data-kunnr  = w_mtnr-kunnr.
+      select single name1 from kna1
+        into w_data-name2
+        where kunnr = w_data-kunnr.
+
+      w_data-matnr  = w_mtnr-matnr.
+      w_data-arktx  = w_mtnr-arktx.
+      w_data-vrkme  = w_mtnr-vrkme.
+      w_data-waerk  = w_mtnr-waerk.
+      w_data-line = w_mtnr-line.
+
+      loop at t_grpy into w_grpy.
+        perform calc_val_mon using w_grpy-coun w_data-kunnr w_data-kunag w_data-matnr w_grpy-fcmnr w_data-line.
+        clear: w_grpy.
+      endloop.
+
+      append w_data to t_data.
+      clear: w_mtnr, w_data, w_mtnz.
+    endloop.
+  endif.
+endform.
+
+form group_mon_year.
+  clear w_grpy.
+  refresh: t_mtnx, t_grpy.
+  t_mtnx  = t_mtnz.
+  sort t_mtnx by fkdat.
+  delete adjacent duplicates from t_mtnx comparing fkdat.
+
+  loop at t_mtnx into w_mtnr.
+    w_grpy-moyr  = w_mtnr-fkdat+0(6).
+    append w_grpy to t_grpy.
+    clear: w_grpy, w_mtnr.
+  endloop.
+
+  sort t_grpy by moyr.
+  delete adjacent duplicates from t_grpy comparing moyr.
+
+  loop at t_grpy into w_grpy.
+    w_grpy-coun   = urut + 1.
+    urut          = w_grpy-coun.
+    w_grpy-fcmnr  = w_grpy-moyr+4(2).
+    select single ktx ltx from t247
+      into (w_grpy-fcktx,w_grpy-fcltx)
+      where mnr = w_grpy-fcmnr and
+            spras = 'E'.
+    translate w_grpy-fcktx to lower case.
+    translate w_grpy-fcktx+0(1) to upper case.
+    w_grpy-year   = w_grpy-moyr+0(4).
+    modify t_grpy from w_grpy.
+    clear: w_grpy.
+  endloop.
+endform.
+
+form calc_val_mon using coun kunnr kunag matnr fcmnr line.
+
+  case coun.
+    when 1.
+      loop at t_mtnz into w_mtnz where kunnr = kunnr and
+                                       kunag = kunag and
+                                       matnr = matnr and
+                                       fkdat+4(2) = fcmnr and
+                                       line = line.
+        w_data-fkmg1 = w_data-fkmg1 + w_mtnz-fkimg.
+       	w_data-ntwr1 = w_data-ntwr1 + w_mtnz-netwr.
+        clear w_mtnz.
+      endloop.
+      w_data-fkimg  = w_data-fkimg + w_data-fkmg1.
+      w_data-netwr  = w_data-netwr + w_data-ntwr1.
+    when 2.
+      loop at t_mtnz into w_mtnz where kunnr = kunnr and
+                                       kunag = kunag and
+                                       matnr = matnr and
+                                       fkdat+4(2) = fcmnr and
+                                       line = line.
+        w_data-fkmg2  = w_data-fkmg2 + w_mtnz-fkimg.
+        w_data-ntwr2  = w_data-ntwr2 + w_mtnz-netwr.
+        clear: w_mtnz.
+      endloop.
+      w_data-fkimg  = w_data-fkimg + w_data-fkmg2.
+      w_data-netwr  = w_data-netwr + w_data-ntwr2.
+    when 3.
+      loop at t_mtnz into w_mtnz where kunnr = kunnr and
+                                       kunag = kunag and
+                                       matnr = matnr and
+                                       fkdat+4(2) = fcmnr and
+                                       line = line.
+        w_data-fkmg3  = w_data-fkmg3 + w_mtnz-fkimg.
+        w_data-ntwr3  = w_data-ntwr3 + w_mtnz-netwr.
+        clear: w_mtnz.
+      endloop.
+      w_data-fkimg  = w_data-fkimg + w_data-fkmg3.
+      w_data-netwr  = w_data-netwr + w_data-ntwr3.
+    when 4.
+      loop at t_mtnz into w_mtnz where kunnr = kunnr and
+                                       kunag = kunag and
+                                       matnr = matnr and
+                                       fkdat+4(2) = fcmnr and
+                                       line = line.
+        w_data-fkmg4  = w_data-fkmg4 + w_mtnz-fkimg.
+        w_data-ntwr4  = w_data-ntwr4 + w_mtnz-netwr.
+        clear: w_mtnz.
+      endloop.
+      w_data-fkimg  = w_data-fkimg + w_data-fkmg4.
+      w_data-netwr  = w_data-netwr + w_data-ntwr4.
+    when 5.
+      loop at t_mtnz into w_mtnz where kunnr = kunnr and
+                                       kunag = kunag and
+                                       matnr = matnr and
+                                       fkdat+4(2) = fcmnr and
+                                       line = line.
+        w_data-fkmg5  = w_data-fkmg5 + w_mtnz-fkimg.
+        w_data-ntwr5  = w_data-ntwr5 + w_mtnz-netwr.
+        clear: w_mtnz.
+      endloop.
+      w_data-fkimg  = w_data-fkimg + w_data-fkmg5.
+      w_data-netwr  = w_data-netwr + w_data-ntwr5.
+    when 6.
+      loop at t_mtnz into w_mtnz where kunnr = kunnr and
+                                       kunag = kunag and
+                                       matnr = matnr and
+                                       fkdat+4(2) = fcmnr and
+                                       line = line.
+        w_data-fkmg6  = w_data-fkmg6 + w_mtnz-fkimg.
+        w_data-ntwr6  = w_data-ntwr6 + w_mtnz-netwr.
+        clear: w_mtnz.
+      endloop.
+      w_data-fkimg  = w_data-fkimg + w_data-fkmg6.
+      w_data-netwr  = w_data-netwr + w_data-ntwr6.
+    when 7.
+      loop at t_mtnz into w_mtnz where kunnr = kunnr and
+                                       kunag = kunag and
+                                       matnr = matnr and
+                                       fkdat+4(2) = fcmnr and
+                                       line = line.
+        w_data-fkmg7  = w_data-fkmg7 + w_mtnz-fkimg.
+        w_data-ntwr7  = w_data-ntwr7 + w_mtnz-netwr.
+        clear: w_mtnz.
+      endloop.
+      w_data-fkimg  = w_data-fkimg + w_data-fkmg7.
+      w_data-netwr  = w_data-netwr + w_data-ntwr7.
+    when 8.
+      loop at t_mtnz into w_mtnz where kunnr = kunnr and
+                                       kunag = kunag and
+                                       matnr = matnr and
+                                       fkdat+4(2) = fcmnr and
+                                       line = line.
+        w_data-fkmg8  = w_data-fkmg8 + w_mtnz-fkimg.
+        w_data-ntwr8  = w_data-ntwr8 + w_mtnz-netwr.
+        clear: w_mtnz.
+      endloop.
+      w_data-fkimg  = w_data-fkimg + w_data-fkmg8.
+      w_data-netwr  = w_data-netwr + w_data-ntwr8.
+    when 9.
+      loop at t_mtnz into w_mtnz where kunnr = kunnr and
+                                       kunag = kunag and
+                                       matnr = matnr and
+                                       fkdat+4(2) = fcmnr and
+                                       line = line.
+        w_data-fkmg9  = w_data-fkmg9 + w_mtnz-fkimg.
+        w_data-ntwr9  = w_data-ntwr9 + w_mtnz-netwr.
+        clear: w_mtnz.
+      endloop.
+      w_data-fkimg  = w_data-fkimg + w_data-fkmg9.
+      w_data-netwr  = w_data-netwr + w_data-ntwr9.
+    when 10.
+      loop at t_mtnz into w_mtnz where kunnr = kunnr and
+                                       kunag = kunag and
+                                       matnr = matnr and
+                                       fkdat+4(2) = fcmnr and
+                                       line = line.
+        w_data-fkmg10  = w_data-fkmg10 + w_mtnz-fkimg.
+        w_data-ntwr10  = w_data-ntwr10 + w_mtnz-netwr.
+        clear: w_mtnz.
+      endloop.
+      w_data-fkimg  = w_data-fkimg + w_data-fkmg10.
+      w_data-netwr  = w_data-netwr + w_data-ntwr10.
+    when 11.
+      loop at t_mtnz into w_mtnz where kunnr = kunnr and
+                                       kunag = kunag and
+                                       matnr = matnr and
+                                       fkdat+4(2) = fcmnr and
+                                       line = line.
+        w_data-fkmg11  = w_data-fkmg11 + w_mtnz-fkimg.
+        w_data-ntwr11  = w_data-ntwr11 + w_mtnz-netwr.
+        clear: w_mtnz.
+      endloop.
+      w_data-fkimg  = w_data-fkimg + w_data-fkmg11.
+      w_data-netwr  = w_data-netwr + w_data-ntwr11.
+    when 12.
+      loop at t_mtnz into w_mtnz where kunnr = kunnr and
+                                       kunag = kunag and
+                                       matnr = matnr and
+                                       fkdat+4(2) = fcmnr and
+                                       line = line.
+        w_data-fkmg12  = w_data-fkmg12 + w_mtnz-fkimg.
+        w_data-ntwr12  = w_data-ntwr12 + w_mtnz-netwr.
+        clear: w_mtnz.
+      endloop.
+      w_data-fkimg  = w_data-fkimg + w_data-fkmg12.
+      w_data-netwr  = w_data-netwr + w_data-ntwr12.
+  endcase.
+endform.

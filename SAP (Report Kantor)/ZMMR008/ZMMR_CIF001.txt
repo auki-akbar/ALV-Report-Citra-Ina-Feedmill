@@ -1,0 +1,53 @@
+*&---------------------------------------------------------------------*
+*& Report ZMMR_CIF001
+*&---------------------------------------------------------------------*
+*&
+*&---------------------------------------------------------------------*
+REPORT ZMMR_CIF001.
+
+TABLES: MSEG, MKPF.
+
+"------- INPUTAN BOX YANG TAMPIL DI SCREEN
+SELECTION-SCREEN BEGIN OF BLOCK HEAD1 WITH FRAME TITLE text-001.
+PARAMETERS: P_WERKS TYPE MSEG-WERKS OBLIGATORY DEFAULT 'E201'.
+
+SELECT-OPTIONS:
+    P_BUDAT FOR MKPF-BUDAT,
+    P_MATNR FOR MSEG-MATNR.
+
+"PARAMETERS: p_eqktu TYPE eqkt-eqktu.
+SELECTION-SCREEN END OF BLOCK HEAD1.
+
+SELECTION-SCREEN BEGIN OF BLOCK HEAD2 WITH FRAME TITLE text-002.
+PARAMETERS:
+            P_RAD1 RADIOBUTTON GROUP RB1 DEFAULT 'X',
+            P_RAD2 RADIOBUTTON GROUP RB1,
+            P_RAD3 RADIOBUTTON GROUP RB1.
+
+SELECTION-SCREEN END OF BLOCK HEAD2.
+
+START-OF-SELECTION.
+
+    IF P_RAD1 = 'X'.
+      SUBMIT ZMMR_CIF001A
+              WITH P_WERKS EQ P_WERKS
+              WITH P_BUDAT IN P_BUDAT
+              WITH P_MATNR IN P_MATNR
+                AND RETURN.
+    ENDIF.
+
+    IF P_RAD2 = 'X'.
+      SUBMIT ZMMR_CIF001B
+              WITH P_WERKS EQ P_WERKS
+              WITH P_BUDAT IN P_BUDAT
+              WITH P_MATNR IN P_MATNR
+                AND RETURN.
+    ENDIF.
+
+    IF P_RAD3 = 'X'.
+      SUBMIT ZMMR_CIF001C
+              WITH P_WERKS EQ P_WERKS
+              WITH P_BUDAT IN P_BUDAT
+              WITH P_MATNR IN P_MATNR
+                AND RETURN.
+    ENDIF.
