@@ -1,0 +1,1325 @@
+*&---------------------------------------------------------------------*
+*& Report ZFIR_CIF002
+*&---------------------------------------------------------------------*
+*&
+*&---------------------------------------------------------------------*
+REPORT ZFIR_CIF002.
+
+TYPE-POOLS:slis.
+INCLUDE: <icon>.
+
+CONSTANTS:
+  yes                                    VALUE 'X',
+  no                                     VALUE space,
+  c_vrsio(3)                             VALUE '000'.
+"----------------- NAMA TABEL YANG DI GUNAKAN ----------
+TABLES: BSIS, BKPF, BSAS, BSEG, vbpa.
+
+*Common Mandatory and Non Mandatory ALV Variables
+DATA:
+  i_layout     TYPE slis_layout_alv,
+  i_events     TYPE slis_t_event,
+  i_fieldcat   TYPE slis_t_fieldcat_alv,
+  i_print      TYPE slis_print_alv,
+  i_list_top   TYPE slis_t_listheader,
+  i_list_end   TYPE slis_t_listheader,
+  i_sort       TYPE slis_t_sortinfo_alv,
+  i_color      TYPE lvc_t_scol WITH HEADER LINE,
+  wa_fieldcat  LIKE LINE OF i_fieldcat,
+  i_variant    LIKE disvariant,
+  i_selfield   TYPE slis_selfield,
+  fcode        TYPE TABLE OF sy-ucomm,
+  ok_code      TYPE sy-ucomm,
+  data_count   TYPE i,
+  header_count TYPE i,
+  v_total TYPE sy-pagno.
+
+
+DATA:
+  gt_ekko LIKE ekko OCCURS 0,
+  gs_extract1 LIKE disextract,
+  gs_extract2 LIKE disextract.
+
+"------- FIELD DATABASE YANG AKAN DI PANGGIL
+TYPES:
+  BEGIN OF zs_print,
+*    sel,
+    KUNNR TYPE KUNNR,
+    BELNR TYPE C LENGTH 10,
+    BUDAT TYPE BUDAT,
+    PIUTANG TYPE DMBTR,
+    BJT TYPE DMBTR,
+    CUST_NAME TYPE KNA1-NAME1,
+    SALES_NAME TYPE KNA1-NAME1,
+    DUE_DATE TYPE BUDAT,
+    DUE0 TYPE DMBTR,
+    DUE30 TYPE DMBTR,
+    DUE60 TYPE DMBTR,
+    DUE90 TYPE DMBTR,
+    DUE_UP_120 TYPE DMBTR,
+    CURR1 TYPE WAERS,
+    CURR2 TYPE WAERS,
+    CURR3 TYPE WAERS,
+    CURR4 TYPE WAERS,
+    CURR5 TYPE WAERS,
+    CURR6 TYPE WAERS,
+    CURR7 TYPE WAERS,
+    ALLOC_NMBR TYPE DZUONR,
+    SP_GL_IND TYPE C LENGTH 1,
+    DOC_TYPE TYPE BLART,
+    period TYPE string,
+
+    colinfo     TYPE lvc_t_scol,
+  END OF zs_print,
+  zt_print TYPE TABLE OF zs_print,
+
+  BEGIN OF ZSVBR,
+    BUKRS TYPE BSEG-BUKRS,
+    BUDAT TYPE BSEG-H_BUDAT,
+    KUNNR TYPE KUNNR,
+    VBELN TYPE BSEG-VBELN,
+
+    colinfo     TYPE lvc_t_scol,
+  END OF ZSVBR,
+  ZTVBR TYPE TABLE OF ZSVBR,
+
+  BEGIN OF zs_sales,
+    vbeln TYPE VBPA-VBELN,
+    colinfo     TYPE lvc_t_scol,
+  END OF zs_Sales,
+  zt_sales TYPE TABLE OF zs_sales,
+
+  BEGIN OF zs_monyr,
+    monyr TYPE string,
+    kunnr TYPE kunnr,
+  END OF zs_monyr,
+  zt_monyr TYPE TABLE OF zs_monyr,
+
+  BEGIN OF zs_avg_pymt,
+    kunnr TYPE kunnr,
+    avg TYPE dmbtr,
+    i TYPE i,
+  END OF zs_avg_pymt,
+  zt_avg_pymt TYPE TABLE OF zs_avg_pymt,
+
+  BEGIN OF zs_divider,
+    kunnr TYPE kunnr,
+    i TYPE i,
+  END OF zs_divider,
+  zt_divider TYPE TABLE OF zs_divider.
+
+DATA:
+  it_print TYPE zt_print,
+  wa_print TYPE zs_print,
+  "-------- BIKIN IT & WA DARI TABEL YANG DI GUNAKAN
+  IT_ZVBR TYPE ZTVBR,
+  WA_ZVBR TYPE ZSVBR,
+  wa_cellcolor TYPE lvc_s_scol,
+  IT_LINEITEMS TYPE STANDARD TABLE OF BAPI3007_2,
+  WA_LINEITEMS LIKE LINE OF IT_LINEITEMS,
+  V_RTURN TYPE BAPIRETURN,
+  it_print2 TYPE zt_print,
+  wa_print2 TYPE zs_print,
+  it_print3 TYPE zt_print,
+  wa_print3 TYPE zs_print,
+  it_print4 TYPE zt_print,
+  wa_print4 TYPE zs_print,
+  it_sales TYPE zt_sales,
+  wa_sales TYPE zs_sales,
+  wa_monyr TYPE zs_monyr,
+  it_monyr TYPE zt_monyr,
+  kunnr TYPE kunnr,
+  it_kunnr TYPE TABLE OF kunnr,
+  avg_pymt TYPE zs_avg_pymt,
+  t_avg_pymt TYPE zt_avg_pymt,
+  it_divider TYPE zt_divider,
+  divider TYPE zs_divider,
+  it_divider2 TYPE zt_divider,
+  divider2 TYPE zs_divider,
+  i TYPE i.
+
+INITIALIZATION.
+CALL FUNCTION 'REUSE_ALV_EXTRACT_AT_INIT'
+  CHANGING
+    cs_extract1 = gs_extract1
+    cs_extract2 = gs_extract2.
+
+"------- INPUTAN BOX YANG TAMPIL DI SCREEN
+
+SELECTION-SCREEN BEGIN OF BLOCK all WITH FRAME TITLE text-001.
+  PARAMETERS:
+    P_BUKRS TYPE BSEG-BUKRS OBLIGATORY DEFAULT 'E02',
+    P_BUDAT TYPE BSEG-H_BUDAT OBLIGATORY.
+
+  SELECTION-SCREEN BEGIN OF BLOCK HEAD WITH FRAME TITLE text-002.
+
+    PARAMETERS:
+          no_cust RADIOBUTTON GROUP bag1 DEFAULT 'X' USER-COMMAND uc1,
+          no_sales RADIOBUTTON GROUP bag1.
+
+    SELECTION-SCREEN BEGIN OF BLOCK DTL WITH FRAME TITLE text-003.
+        SELECT-OPTIONS:
+        P_KUNNR FOR BSEG-KUNNR MODIF ID mi1,
+        p_sales FOR vbpa-kunnr MODIF ID mi2.
+    SELECTION-SCREEN END OF BLOCK DTL.
+  SELECTION-SCREEN END OF BLOCK HEAD.
+
+  PARAMETERS:
+    P_RAD1 RADIOBUTTON GROUP RB1,
+    P_RAD2 RADIOBUTTON GROUP RB1 DEFAULT 'X'.
+SELECTION-SCREEN END OF BLOCK all.
+
+SELECTION-SCREEN BEGIN OF BLOCK layout WITH FRAME TITLE text-004.
+  PARAMETERS:
+    rpt1 RADIOBUTTON GROUP rpt DEFAULT 'X',
+    rpt2 RADIOBUTTON GROUP rpt,
+    rpt3 RADIOBUTTON GROUP rpt.
+SELECTION-SCREEN END OF BLOCK layout.
+
+AT SELECTION-SCREEN OUTPUT.
+  LOOP AT SCREEN.
+    IF no_cust = 'X'.
+      IF screen-group1 = 'MI1'.
+        screen-active = 1.
+      ELSEIF screen-group1 = 'MI2'.
+        screen-active = 0.
+      ENDIF.
+    ENDIF.
+
+    IF no_sales = 'X'.
+      IF screen-group1 = 'MI2'.
+        screen-active = 1.
+      ELSEIF screen-group1 = 'MI1'.
+        screen-active = 0.
+      ENDIF.
+    ENDIF.
+
+    MODIFY SCREEN.
+  ENDLOOP.
+
+START-OF-SELECTION.
+
+  IF no_cust = 'X'.
+    PERFORM f_getdt.
+  ELSEIF no_sales = 'X'.
+    PERFORM f_getdt2.
+  ENDIF.
+
+  IF P_RAD1 = 'X'.
+    PERFORM f_lstdt1.
+  ELSEIF P_RAD2 = 'X'.
+    PERFORM f_lstdt2.
+  ENDIF.
+
+  IF rpt1 = 'X'.
+    PERFORM fit_it_print.
+  ELSEIF rpt2 = 'X'.
+    PERFORM fit_by_customer.
+  ELSEIF rpt3 = 'X'.
+    PERFORM fit_for_special_customer.
+  ENDIF.
+
+
+  DESCRIBE TABLE it_print LINES data_count.
+  IF data_count > 0.
+    CALL FUNCTION 'SAPGUI_PROGRESS_INDICATOR'
+      EXPORTING
+        text = 'Preparing report.......'.
+
+    PERFORM f_layout_init USING i_layout.
+    PERFORM f_eventtab_build USING i_events[].
+    i_variant-report = sy-repid.
+    PERFORM f_print_control.
+    PERFORM f_build_header_list.
+    PERFORM f_build_sort.
+    PERFORM f_build_fieldcat USING rpt1 rpt2 rpt3.
+    PERFORM f_build_data TABLES it_print.
+    PERFORM print_alv.
+  ELSE.
+*    MESSAGE E131(E1).
+    MESSAGE 'Data Not Found' TYPE 'I'.
+    RETURN .
+  ENDIF.
+
+
+*Form  f_layout_init
+*Global settings for ALV worksheet, Change according to needs
+FORM f_layout_init  USING   p_layout TYPE slis_layout_alv.
+  p_layout-detail_popup       = yes.
+  p_layout-numc_sum           = yes.
+  p_layout-colwidth_optimize  = no.
+  p_layout-zebra              = yes.
+  p_layout-get_selinfos        = yes.
+  p_layout-coltab_fieldname   = 'COLINFO'.
+  p_layout-subtotals_text     = 'SubTotal'.
+  p_layout-totals_text        = 'Total'.
+*  p_layout-box_fieldname      = 'SEL'. "------- UNTUK MENGAKTIFKAN CEKBOX(SELECTION) 'SEL'
+
+ENDFORM.                    " f_layout_init
+
+*Form  f_eventtab_build
+*Event listing for ALV worksheet, Change according to needs
+FORM f_eventtab_build  USING p_events TYPE slis_t_event.
+  DATA:
+    ls_event TYPE slis_alv_event.
+
+  CALL FUNCTION 'REUSE_ALV_EVENTS_GET'
+    EXPORTING
+      i_list_type = 0
+    IMPORTING
+      et_events   = p_events.
+
+  READ TABLE p_events WITH KEY name = slis_ev_top_of_page INTO ls_event.
+  IF sy-subrc = 0.
+    MOVE slis_ev_top_of_page TO: ls_event-form, ls_event-name.
+    APPEND ls_event TO p_events.
+  ENDIF.
+
+  READ TABLE p_events WITH KEY name = slis_ev_end_of_page INTO ls_event.
+  IF sy-subrc = 0.
+    MOVE slis_ev_end_of_page TO: ls_event-form, ls_event-name.
+    APPEND ls_event TO p_events.
+  ENDIF.
+
+*  READ TABLE p_events WITH KEY name = slis_ev_end_of_list INTO ls_event.
+*  IF sy-subrc = 0.
+*    MOVE slis_ev_end_of_list TO: ls_event-form, ls_event-name.
+*    APPEND ls_event TO p_events.
+*  ENDIF.
+
+  READ TABLE p_events WITH KEY name = slis_ev_top_of_list INTO ls_event.
+  IF sy-subrc = 0.
+    MOVE slis_ev_top_of_list TO: ls_event-form, ls_event-name.
+    APPEND ls_event TO p_events.
+  ENDIF.
+
+  "----------------- UNCOMMAND UNTUK NONAKTIVKAN TOMBOL DI ATAS-----------
+*  READ TABLE p_events WITH KEY name = slis_ev_pf_status_set INTO ls_event.
+*  IF sy-subrc = 0.
+*    MOVE slis_ev_pf_status_set TO: ls_event-form, ls_event-name.
+*    APPEND ls_event TO p_events.
+*  ENDIF.
+  "---------------- END SCRIPT ---------------------------------------------
+
+  READ TABLE p_events WITH KEY name = slis_ev_user_command INTO ls_event.
+  IF sy-subrc = 0.
+    MOVE slis_ev_user_command TO: ls_event-form, ls_event-name.
+    APPEND ls_event TO p_events.
+  ENDIF.
+
+ENDFORM.                    " f_eventtab_build
+
+*Form  f_print_control
+*Global settings for print control???????????, Change according to needs
+FORM f_print_control.
+  i_print-no_print_selinfos      = yes.
+  i_print-no_print_listinfos     = yes.
+  i_print-reserve_lines          = 0.
+  i_print-no_change_print_params = yes.
+
+ENDFORM.                    " f_print_control
+
+*Form  f_build_header_list
+*As the name implies i guess (^_^;)
+FORM f_build_header_list.
+  DATA: lwa_list_top LIKE LINE OF i_list_top,
+        lv_text LIKE sy-title,
+        gs_line TYPE slis_listheader,
+        vtime   TYPE char12,
+        vtitle  TYPE char50.
+
+  REFRESH i_list_top.
+  CLEAR lwa_list_top.
+  lwa_list_top-typ = 'H'.
+  lwa_list_top-key = no.
+  lwa_list_top-info = sy-title.
+  APPEND lwa_list_top TO i_list_top.
+
+*  REFRESH i_list_top.
+*  CLEAR lwa_list_top.
+*  lwa_list_top-typ = 'S'.
+*  lwa_list_top-key = 'user:'.
+*  lwa_list_top-info = sy-uname.
+*  APPEND lwa_list_top TO i_list_top.
+
+ENDFORM.                    " f_build_header_list
+
+*Form  f_build_sort
+*Sort by blah blah blah
+FORM f_build_sort .
+  DATA: l_sort TYPE slis_sortinfo_alv.
+
+
+  define def_sort.
+    clear l_sort.
+*Sort position
+    l_sort-spos      = &1.
+    l_sort-fieldname = &2.
+
+*Sort by ascending
+    l_sort-up        = yes.
+
+*Subtot key
+    l_sort-subtot    = yes.
+
+*Separate Line between Group
+    l_sort-group     = 'UL'.
+    append l_sort to i_sort.
+  end-of-definition.
+
+*  def_Sort '01' 'RACCT'.
+
+ENDFORM.                    " f_build_sort
+
+
+
+***************************Form fbuild_fieldcat.
+***************************What fields to expose
+FORM f_build_fieldcat USING p_rpt1 p_rpt2 p_rpt3.
+*****************************************************
+
+  REFRESH i_fieldcat.
+
+  CLEAR wa_fieldcat.
+*  wa_fieldcat-col_pos       = 1.
+  wa_fieldcat-fieldname     = 'KUNNR'.
+  wa_fieldcat-seltext_l     = wa_fieldcat-seltext_m = wa_fieldcat-seltext_l = 'Customer Number'.
+  wa_fieldcat-ref_tabname   = 'BAPI3007_2'.
+  wa_fieldcat-ref_fieldname = 'CUSTOMER'.
+  wa_fieldcat-ddictxt       = 'L'.
+  APPEND wa_fieldcat TO i_fieldcat.
+**
+  CLEAR wa_fieldcat.
+*  wa_fieldcat-col_pos       = 2.
+  wa_fieldcat-fieldname     = 'CUST_NAME'.
+  wa_fieldcat-seltext_l     = wa_fieldcat-seltext_m = wa_fieldcat-seltext_l = 'Customer Name'.
+  wa_fieldcat-ref_tabname   = 'KNA1'.
+  wa_fieldcat-ddictxt       = 'L'.
+  wa_fieldcat-ref_fieldname = 'NAME1'.
+  APPEND wa_fieldcat TO i_fieldcat.
+*
+  CLEAR wa_fieldcat.
+*  wa_fieldcat-col_pos       = 3.
+  wa_fieldcat-fieldname     = 'SALES_NAME'.
+  wa_fieldcat-seltext_l     = wa_fieldcat-seltext_m = wa_fieldcat-seltext_l = 'Sales Name'.
+  wa_fieldcat-ref_tabname   = 'KNA1'.
+  wa_fieldcat-ddictxt       = 'L'.
+  wa_fieldcat-ref_fieldname = 'NAME1'.
+  APPEND wa_fieldcat TO i_fieldcat.
+*
+  IF rpt1 = 'X'.
+    CLEAR wa_fieldcat.
+*   wa_fieldcat-col_pos       = 4.
+    wa_fieldcat-fieldname     = 'BELNR'.
+    wa_fieldcat-seltext_l     = wa_fieldcat-seltext_m = wa_fieldcat-seltext_l = 'Document Number'.
+    wa_fieldcat-ref_tabname   = 'BAPI3007_2'.
+    wa_fieldcat-ddictxt       = 'L'.
+    wa_fieldcat-ref_fieldname = 'DOC_NO'.
+    APPEND wa_fieldcat TO i_fieldcat.
+*
+    CLEAR wa_fieldcat.
+*   wa_fieldcat-col_pos       = 5.
+    wa_fieldcat-fieldname     = 'BUDAT'.
+    wa_fieldcat-seltext_l     = wa_fieldcat-seltext_m = wa_fieldcat-seltext_l = 'Posting Date'.
+    wa_fieldcat-ref_tabname   = 'BAPI3007_2'.
+    wa_fieldcat-ddictxt       = 'L'.
+    wa_fieldcat-ref_fieldname = 'PSTNG_DATE'.
+    APPEND wa_fieldcat TO i_fieldcat.
+**
+    CLEAR wa_fieldcat.
+*   wa_fieldcat-col_pos       = 6.
+    wa_fieldcat-fieldname     = 'DUE_DATE'.
+    wa_fieldcat-seltext_l     = wa_fieldcat-seltext_m = wa_fieldcat-seltext_l = 'Net Due Date'.
+    wa_fieldcat-ref_tabname   = 'BAPI3007_2'.
+    wa_fieldcat-ddictxt       = 'L'.
+    wa_fieldcat-ref_fieldname = 'PSTNG_DATE'.
+    APPEND wa_fieldcat TO i_fieldcat.
+  ENDIF.
+*
+  IF rpt3 = 'X'.
+    CLEAR wa_fieldcat.
+*   wa_fieldcat-col_pos       = 5.
+    wa_fieldcat-fieldname     = 'PERIOD'.
+    wa_fieldcat-seltext_l     = wa_fieldcat-seltext_m = wa_fieldcat-seltext_l = 'Periode Jatuh Tempo'.
+*   wa_fieldcat-ref_tabname   = 'BAPI3007_2'.
+    wa_fieldcat-ddictxt       = 'L'.
+*   wa_fieldcat-ref_fieldname = 'PSTNG_DATE'.
+    APPEND wa_fieldcat TO i_fieldcat.
+  ENDIF.
+*
+  CLEAR wa_fieldcat.
+*  wa_fieldcat-col_pos       = 7.
+  wa_fieldcat-fieldname     = 'PIUTANG'.
+  wa_fieldcat-seltext_l     = wa_fieldcat-seltext_m = wa_fieldcat-seltext_l = 'Piutang'.
+  wa_fieldcat-ref_tabname   = 'BAPI3007_2'.
+  wa_fieldcat-ddictxt       = 'L'.
+  wa_fieldcat-cfieldname    = 'CURR1'.
+  wa_fieldcat-ref_fieldname = 'LC_AMOUNT'.
+  APPEND wa_fieldcat TO i_fieldcat.
+*
+  CLEAR wa_fieldcat.
+*  wa_fieldcat-col_pos       = 8.
+  wa_fieldcat-fieldname     = 'CURR1'.
+  wa_fieldcat-seltext_l     = wa_fieldcat-seltext_m = wa_fieldcat-seltext_l = 'Curr.'.
+  wa_fieldcat-ref_tabname   = 'BAPI3007_2'.
+  wa_fieldcat-ddictxt       = 'L'.
+  wa_fieldcat-ref_fieldname = 'CURRENCY'.
+  APPEND wa_fieldcat TO i_fieldcat.
+*
+  CLEAR wa_fieldcat.
+*  wa_fieldcat-col_pos       = 9.
+  wa_fieldcat-fieldname     = 'BJT'.
+  wa_fieldcat-seltext_l     = wa_fieldcat-seltext_m = wa_fieldcat-seltext_l = 'Belum Jatuh Tempo'.
+  wa_fieldcat-ref_tabname   = 'BAPI3007_2'.
+  wa_fieldcat-ddictxt       = 'L'.
+  wa_fieldcat-cfieldname    = 'CURR2'.
+  wa_fieldcat-ref_fieldname = 'LC_AMOUNT'.
+  APPEND wa_fieldcat TO i_fieldcat.
+*
+  CLEAR wa_fieldcat.
+*  wa_fieldcat-col_pos       = 10.
+  wa_fieldcat-fieldname     = 'CURR2'.
+  wa_fieldcat-seltext_l     = wa_fieldcat-seltext_m = wa_fieldcat-seltext_l = 'Curr.'.
+  wa_fieldcat-ref_tabname   = 'BAPI3007_2'.
+  wa_fieldcat-ddictxt       = 'L'.
+  wa_fieldcat-ref_fieldname = 'CURRENCY'.
+  APPEND wa_fieldcat TO i_fieldcat.
+**    "CURR
+  CLEAR wa_fieldcat.
+*  wa_fieldcat-col_pos       = 11.
+  wa_fieldcat-fieldname     = 'DUE0'.
+  wa_fieldcat-seltext_l     = wa_fieldcat-seltext_m = wa_fieldcat-seltext_l = '1-30'.
+  wa_fieldcat-ref_tabname   = 'BAPI3007_2'.
+  wa_fieldcat-ddictxt       = 'L'.
+  wa_fieldcat-cfieldname    = 'CURR3'.
+  wa_fieldcat-ref_fieldname = 'LC_AMOUNT'.
+  APPEND wa_fieldcat TO i_fieldcat.
+**
+  CLEAR wa_fieldcat.
+*  wa_fieldcat-col_pos       = 12.
+  wa_fieldcat-fieldname     = 'CURR3'.
+  wa_fieldcat-seltext_l     = wa_fieldcat-seltext_m = wa_fieldcat-seltext_l = 'Curr.'.
+  wa_fieldcat-ref_tabname   = 'BAPI3007_2'.
+  wa_fieldcat-ddictxt       = 'L'.
+  wa_fieldcat-ref_fieldname = 'CURRENCY'.
+  APPEND wa_fieldcat TO i_fieldcat.
+*
+  CLEAR wa_fieldcat.
+*  wa_fieldcat-col_pos       = 13.
+  wa_fieldcat-fieldname     = 'DUE30'.
+  wa_fieldcat-seltext_l     = wa_fieldcat-seltext_m = wa_fieldcat-seltext_l = '30-60'.
+  wa_fieldcat-ref_tabname   = 'BAPI3007_2'.
+  wa_fieldcat-ddictxt       = 'L'.
+  wa_fieldcat-cfieldname    = 'CURR4'.
+  wa_fieldcat-ref_fieldname = 'LC_AMOUNT'.
+  APPEND wa_fieldcat TO i_fieldcat.
+*
+  CLEAR wa_fieldcat.
+*  wa_fieldcat-col_pos       = 14.
+  wa_fieldcat-fieldname     = 'CURR4'.
+  wa_fieldcat-seltext_l     = wa_fieldcat-seltext_m = wa_fieldcat-seltext_l = 'Curr.'.
+  wa_fieldcat-ref_tabname   = 'BAPI3007_2'.
+  wa_fieldcat-ddictxt       = 'L'.
+  wa_fieldcat-ref_fieldname = 'CURRENCY'.
+  APPEND wa_fieldcat TO i_fieldcat.
+*
+  CLEAR wa_fieldcat.
+*  wa_fieldcat-col_pos       = 15.
+  wa_fieldcat-fieldname     = 'DUE60'.
+  wa_fieldcat-seltext_l     = wa_fieldcat-seltext_m = wa_fieldcat-seltext_l = '60-90'.
+  wa_fieldcat-ref_tabname   = 'BAPI3007_2'.
+  wa_fieldcat-ddictxt       = 'L'.
+  wa_fieldcat-cfieldname    = 'CURR5'.
+  wa_fieldcat-ref_fieldname = 'LC_AMOUNT'.
+  APPEND wa_fieldcat TO i_fieldcat.
+*
+  CLEAR wa_fieldcat.
+*  wa_fieldcat-col_pos       = 16.
+  wa_fieldcat-fieldname     = 'CURR5'.
+  wa_fieldcat-seltext_l     = wa_fieldcat-seltext_m = wa_fieldcat-seltext_l = 'Curr.'.
+  wa_fieldcat-ref_tabname   = 'BAPI3007_2'.
+  wa_fieldcat-ddictxt       = 'L'.
+  wa_fieldcat-ref_fieldname = 'CURRENCY'.
+  APPEND wa_fieldcat TO i_fieldcat.
+*
+  CLEAR wa_fieldcat.
+*  wa_fieldcat-col_pos       = 17.
+  wa_fieldcat-fieldname     = 'DUE90'.
+  wa_fieldcat-seltext_l     = wa_fieldcat-seltext_m = wa_fieldcat-seltext_l = '90-120'.
+  wa_fieldcat-ref_tabname   = 'BAPI3007_2'.
+  wa_fieldcat-ddictxt       = 'L'.
+  wa_fieldcat-cfieldname    = 'CURR6'.
+  wa_fieldcat-ref_fieldname = 'LC_AMOUNT'.
+  APPEND wa_fieldcat TO i_fieldcat.
+*
+  CLEAR wa_fieldcat.
+*  wa_fieldcat-col_pos       = 18.
+  wa_fieldcat-fieldname     = 'CURR6'.
+  wa_fieldcat-seltext_l     = wa_fieldcat-seltext_m = wa_fieldcat-seltext_l = 'Curr.'.
+  wa_fieldcat-ref_tabname   = 'BAPI3007_2'.
+  wa_fieldcat-ddictxt       = 'L'.
+  wa_fieldcat-ref_fieldname = 'CURRENCY'.
+  APPEND wa_fieldcat TO i_fieldcat.
+*
+  CLEAR wa_fieldcat.
+*  wa_fieldcat-col_pos       = 19.
+  wa_fieldcat-fieldname     = 'DUE_UP_120'.
+  wa_fieldcat-seltext_l     = wa_fieldcat-seltext_m = wa_fieldcat-seltext_l = '>120'.
+  wa_fieldcat-ref_tabname   = 'BAPI3007_2'.
+  wa_fieldcat-ddictxt       = 'L'.
+  wa_fieldcat-cfieldname    = 'CURR7'.
+  wa_fieldcat-ref_fieldname = 'LC_AMOUNT'.
+  APPEND wa_fieldcat TO i_fieldcat.
+*
+  CLEAR wa_fieldcat.
+*  wa_fieldcat-col_pos       = 20.
+  wa_fieldcat-fieldname     = 'CURR7'.
+  wa_fieldcat-seltext_l     = wa_fieldcat-seltext_m = wa_fieldcat-seltext_l = 'Curr.'.
+  wa_fieldcat-ref_tabname   = 'BAPI3007_2'.
+  wa_fieldcat-ddictxt       = 'L'.
+  wa_fieldcat-ref_fieldname = 'CURRENCY'.
+  APPEND wa_fieldcat TO i_fieldcat.
+*
+
+ENDFORM.                    "f_build_field_cat
+
+***************************Form fbuild_data.
+***************************What The Heck Is This
+FORM f_build_data  TABLES  lt_data STRUCTURE wa_print.
+*DATA:
+*  wa_check TYPE zs_print,
+*  lp_prev_index TYPE i,
+*  wlt_data TYPE zs_print,
+*  c_indicator TYPE i VALUE 1.
+*
+*
+* LOOP AT lt_data INTO wlt_data.
+*   IF sy-tabix > 1.
+*     lp_prev_index = sy-tabix - 1.
+*     READ TABLE lt_data INDEX lp_prev_index INTO wa_check.
+*     IF wlt_data-svbeln2 <> wa_check-svbeln2.
+*       c_indicator = c_indicator * -1.
+*     ENDIF.
+*   ENDIF.
+*
+*  IF c_indicator = 1.
+*     REFRESH i_color.
+*     CLEAR   i_color.
+*     i_color-color-col = cl_gui_resources=>list_col_negative.
+*     i_color-color-int = 0.
+*  ELSE.
+*     REFRESH i_color.
+*     CLEAR   i_color.
+*     i_color-color-col = cl_gui_resources=>list_col_positive.
+*     i_color-color-int = 0.
+*  ENDIF.
+*
+*  APPEND i_color.
+*  wlt_data-colinfo[] = i_color[].
+*  MODIFY lt_data FROM wlt_data.
+*  CLEAR wlt_data.
+* ENDLOOP.
+ENDFORM.                    " f_build_data
+
+
+*&--------------------------------------------------------------------*
+*&Form  print_alv
+*&--------------------------------------------------------------------*
+FORM print_alv.
+  DATA:
+    i_save VALUE 'U'.
+
+  CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY'
+    EXPORTING
+      i_callback_program = gs_extract1-report
+      is_layout          = i_layout
+      it_fieldcat        = i_fieldcat
+      i_save             = i_save
+      is_variant         = i_variant
+      it_events          = i_events[]
+      it_sort            = i_sort
+      is_print           = i_print
+    TABLES
+      t_outtab           = it_print
+    EXCEPTIONS
+      program_error      = 1
+      OTHERS             = 2.
+  IF sy-subrc <> 0.
+    MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+            WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+  ENDIF.
+ENDFORM.                    "
+
+*&---------------------------------------------------------------------*
+*&Form  TOP_OF_PAGE
+*&---------------------------------------------------------------------*
+FORM top_of_page.                                           "#EC CALLED
+  DATA: lflg_grid TYPE c,
+        lv_text LIKE sy-title.
+  IMPORT lflg_grid FROM MEMORY ID 'ALV_GRID_TOP_OF_PAGE'.
+  IF lflg_grid = yes.
+    CALL FUNCTION 'REUSE_ALV_COMMENTARY_WRITE'
+      EXPORTING
+*        i_logo             = 'ENJOYSAP_LOGO'
+        it_list_commentary = i_list_top.
+*              I_END_OF_LIST_GRID = i_list_end.
+  ELSE.
+    PERFORM f_print_header USING text-100 lv_text space.
+  ENDIF.
+ENDFORM.                    "TOP_OF_PAGE
+
+*&---------------------------------------------------------------------*
+*&Form  PF_STATUS_SET
+*&---------------------------------------------------------------------*
+FORM pf_status_set USING rt_extab TYPE slis_t_extab.
+
+  SET PF-STATUS 'STATALV' EXCLUDING fcode.
+  SET TITLEBAR  'TITLEALV'.
+ENDFORM.                    "PF_STATUS_SET
+
+*&---------------------------------------------------------------------*
+*&Form  USER_COMMAND
+*&---------------------------------------------------------------------*
+FORM user_command USING r_ucomm
+                        i_selfield LIKE i_selfield.
+  DATA: t_answer TYPE char1.
+
+  CLEAR ok_code.
+  ok_code = r_ucomm.
+  CLEAR sy-ucomm.
+  CASE ok_code.
+    WHEN 'EXIT'.
+      LEAVE TO CURRENT TRANSACTION.
+"------------------- SCRIPT PRINT TO SMARTFORM ------------------
+*    WHEN 'PRINT'.
+*      CLEAR WA_PRINT.
+*      READ TABLE IT_PRINT INTO WA_PRINT WITH KEY SEL = 'X'.
+*
+*      SUBMIT ZFDW_TESTREPORTFORM WITH P_BANFN = WA_PRINT-BANFN AND RETURN.
+"------------------ END SCRIPT -----------------------
+
+"--------------- SCRIPT YANG BISA KONEK KE TCODE---------
+*     WHEN '&IC1'.
+*       CASE i_selfield-sel_tab_field.
+*
+*         WHEN '1-BANFN'.
+*           SET PARAMETER ID 'BAN' FIELD i_selfield-value.  "------- SET PARAMETER INDUPTAN DARI TCODE YANG AKAN DI PAKAI-------
+*           CALL TRANSACTION 'ME53N' AND SKIP FIRST SCREEN. "----- YG DALAM KUTIP TCODE -------
+*
+*          WHEN '1-MATNR'.
+*            SET PARAMETER ID 'MAT' FIELD i_selfield-value. "------- SET PARAMETER INDUPTAN DARI TCODE YANG AKAN DI PAKAI-------
+*            CALL TRANSACTION 'MM03' AND SKIP FIRST SCREEN. "----- YG DALAM KUTIP TCODE -------
+*        ENDCASE.
+
+
+"-------------------- END SCRIPT ---------------------------------------
+
+  ENDCASE.
+
+*    WHEN '&IC1'.
+*
+*      CASE i_selfield-sel_tab_field.
+*         WHEN '1-BANFN'. r_ucomm = 'PRDO'.
+*      ENDCASE.
+*
+*      CASE r_ucomm.
+*         WHEN 'PRDO'.
+*            SET PARAMETER ID 'BAN' FIELD i_selfield-value.
+*            CALL TRANSACTION 'ME53N' AND SKIP FIRST SCREEN. "------ KUTIP ADALAH TRANSAKSI CODE (TCODE) -----------
+*      ENDCASE.
+
+ENDFORM.                    "user_command
+
+*&---------------------------------------------------------------------*
+*&Form  END_OF_PAGE
+*&---------------------------------------------------------------------*
+FORM end_of_page.                                           "#EC CALLED
+  data: l_pos(3) type n value 0, l_foot(30) value '*** END OF PAGE ***'.
+  l_pos = ( sy-linsz / 2 ) - ( strlen( l_foot ) / 2 ).
+  uline.
+  write: /, at l_pos l_foot.
+
+ENDFORM.                    "END_OF_PAGE
+
+*&---------------------------------------------------------------------*
+*&Form  END_OF_LIST
+*&---------------------------------------------------------------------*
+FORM end_of_list.                                           "#EC CALLED
+  data: lv_page_count(3).
+  data: l_pos(3) type n value 0, l_foot(30) value '*** END OF REPORT ***'.
+  l_pos = ( sy-linsz / 2 ) - ( strlen( l_foot ) / 2 ).
+  uline.
+  write: /, at l_pos l_foot.
+  check sy-ucomm eq '&RNT'.
+  v_total = sy-pagno.
+
+  CALL FUNCTION 'REUSE_ALV_COMMENTARY_WRITE'
+    EXPORTING
+      i_logo             = 'ENJOYSAP_LOGO'
+      I_END_OF_LIST_GRID = i_list_end.
+ENDFORM.                    "END_OF_LIST
+*&---------------------------------------------------------------------*
+*&Form  f_print_header
+*&---------------------------------------------------------------------*
+FORM f_print_header  USING    p_title1 LIKE sy-title
+                              p_title2 LIKE sy-title
+                              p_title3 LIKE sy-title.
+
+  data: l_post1 type i, l_post2 type i, l_post3 type i, l_post4 type i, l_posin type i.
+
+  l_post1 = ( sy-linsz / 2 ) - ( strlen( p_title1 ) / 2 ).
+  l_post2 = ( sy-linsz / 2 ) - ( strlen( p_title2 ) / 2 ).
+  l_post3 = ( sy-linsz / 2 ) - ( strlen( p_title3 ) / 2 ).
+  l_post4 = l_post1 - 15.
+  l_posin = sy-linsz - 22.
+
+  write:  / 'Report  :', sy-cprog.
+  write at  l_post1 'Argo Manunggal Group'.
+  write at  l_posin 'Date :'.
+  write     sy-datum.
+
+  write:  / 'Cli/Sys :', sy-mandt, '/', sy-sysid.
+  write at  l_post4 sy-title.
+  write at: l_posin 'Time :'.
+  write     sy-uzeit.
+
+  write:  / 'UserID  :', sy-uname.
+  write at  l_posin 'Page :'.
+
+  if v_total is not initial.
+    write: (3) sy-pagno no-zero, 'of', (3) v_total.
+  else.
+    write (3) sy-pagno no-zero.
+  endif.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*&      Form  F_GETDT
+*---------- GET DATA DARI DATABASE ------------
+*&---------------------------------------------------------------------*
+FORM F_GETDT.
+
+
+  SELECT BSEG~BUKRS
+         BSEG~KUNNR
+    FROM BSEG
+    INTO CORRESPONDING FIELDS OF TABLE IT_ZVBR
+    WHERE BSEG~BUKRS = P_BUKRS AND
+          BSEG~KUNNR IN P_KUNNR.
+ENDFORM.
+
+FORM F_GETDT2.
+
+  SELECT vbpa~vbeln FROM VBPA
+    INNER JOIN vbrp ON vbpa~vbeln = vbrp~vbeln
+    INTO CORRESPONDING FIELDS OF TABLE it_sales
+    WHERE vbpa~parvw = 'ZS' AND
+*          vbrp~werks = 'E201' AND
+          vbpa~kunnr IN p_sales.
+
+    LOOP AT it_sales INTO wa_sales.
+
+      SELECT SINGLE kunnr FROM vbpa
+        INTO wa_zvbr-kunnr
+        WHERE vbpa~vbeln = wa_sales-vbeln AND
+              vbpa~parvw = 'RE'.
+
+      wa_zvbr-bukrs = p_bukrs.
+
+      APPEND wa_zvbr TO it_zvbr.
+      CLEAR: wa_sales, wa_zvbr.
+    ENDLOOP.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*&      Form  F_LSTDT
+*&---------------------------------------------------------------------*
+FORM F_LSTDT1.
+
+ CLEAR: WA_ZVBR, WA_PRINT.
+
+ SORT IT_ZVBR BY KUNNR.
+ DELETE ADJACENT DUPLICATES FROM IT_ZVBR COMPARING KUNNR.
+
+ LOOP AT IT_ZVBR INTO WA_ZVBR.
+
+   CALL FUNCTION 'BAPI_AR_ACC_GETOPENITEMS'
+     EXPORTING
+       COMPANYCODE       = WA_ZVBR-BUKRS
+       CUSTOMER          = WA_ZVBR-KUNNR
+       KEYDATE           = P_BUDAT
+      NOTEDITEMS         =  'X'
+*      SECINDEX          = ' '
+    IMPORTING
+      RETURN             = V_RTURN
+     TABLES
+       LINEITEMS         = IT_LINEITEMS
+             .
+   LOOP AT IT_LINEITEMS INTO WA_LINEITEMS.
+     WA_PRINT-KUNNR = WA_LINEITEMS-CUSTOMER.
+     WA_PRINT-BELNR = WA_LINEITEMS-DOC_NO.
+     WA_PRINT-BUDAT = WA_LINEITEMS-PSTNG_DATE.
+
+     IF WA_LINEITEMS-CURRENCY <> ''.
+       WA_PRINT-CURR1 = WA_LINEITEMS-CURRENCY.
+       WA_PRINT-CURR2 = WA_LINEITEMS-CURRENCY.
+       WA_PRINT-CURR3 = WA_LINEITEMS-CURRENCY.
+       WA_PRINT-CURR4 = WA_LINEITEMS-CURRENCY.
+       WA_PRINT-CURR5 = WA_LINEITEMS-CURRENCY.
+       WA_PRINT-CURR6 = WA_LINEITEMS-CURRENCY.
+       WA_PRINT-CURR7 = WA_LINEITEMS-CURRENCY.
+     ELSE.
+       WA_PRINT-CURR1 = 'IDR'.
+       WA_PRINT-CURR2 = 'IDR'.
+       WA_PRINT-CURR3 = 'IDR'.
+       WA_PRINT-CURR4 = 'IDR'.
+       WA_PRINT-CURR5 = 'IDR'.
+       WA_PRINT-CURR6 = 'IDR'.
+       WA_PRINT-CURR7 = 'IDR'.
+     ENDIF.
+
+     WA_PRINT-SP_GL_IND = WA_LINEITEMS-SP_GL_IND.
+     WA_PRINT-ALLOC_NMBR = WA_LINEITEMS-ALLOC_NMBR.
+     WA_PRINT-DOC_TYPE = WA_LINEITEMS-DOC_TYPE.
+
+*     IF WA_LINEITEMS-DOC_TYPE = 'DZ' OR WA_LINEITEMS-SP_GL_IND = 'A'.
+*       WA_PRINT-PIUTANG = ( WA_LINEITEMS-LC_AMOUNT * -1 ) / 100.
+*     ELSEIF WA_LINEITEMS-DOC_TYPE = ''.
+*       WA_PRINT-PIUTANG = WA_LINEITEMS-LC_AMOUNT * -1.
+*     ELSE.
+*       WA_PRINT-PIUTANG = WA_LINEITEMS-LC_AMOUNT / 100.
+*     ENDIF.
+
+    IF wa_lineitems-db_cr_ind = 'S'.
+      wa_print-piutang = wa_lineitems-amount / 100.
+    ELSEIF wa_lineitems-db_cr_ind = 'H' OR wa_lineitems-sp_gl_ind = 'A'.
+      wa_print-piutang = wa_lineitems-amount / -100.
+    ENDIF.
+
+
+     SELECT SINGLE NAME1 FROM KNA1
+       INTO WA_PRINT-CUST_NAME
+       WHERE KUNNR = WA_ZVBR-KUNNR.
+
+     SELECT SINGLE NAME1 FROM KNA1
+       INNER JOIN VBPA ON KNA1~KUNNR = VBPA~KUNNR
+       INTO WA_PRINT-SALES_NAME
+       WHERE VBPA~PARVW = 'ZS' AND
+             VBPA~VBELN = WA_LINEITEMS-BILL_DOC.
+
+     WA_PRINT-DUE_DATE = WA_LINEITEMS-BLINE_DATE + WA_LINEITEMS-DSCT_DAYS1.
+
+     IF SY-DATUM <= WA_PRINT-DUE_DATE.
+       WA_PRINT-BJT = WA_PRINT-PIUTANG.
+     ELSEIF SY-DATUM >= WA_PRINT-DUE_DATE.
+       WA_PRINT-BJT = 0.
+
+       IF WA_LINEITEMS-DSCT_DAYS1 <= 30.
+         WA_PRINT-DUE0 = WA_PRINT-PIUTANG.
+       ELSEIF WA_LINEITEMS-DSCT_DAYS1 <= 60.
+         WA_PRINT-DUE30 = WA_PRINT-PIUTANG.
+       ELSEIF WA_LINEITEMS-DSCT_DAYS1 <= 90.
+         WA_PRINT-DUE60 = WA_PRINT-PIUTANG.
+       ELSEIF WA_LINEITEMS-DSCT_DAYS1 <= 120.
+         WA_PRINT-DUE90 = WA_PRINT-PIUTANG.
+       ELSE.
+         WA_PRINT-DUE_UP_120 = WA_PRINT-PIUTANG.
+       ENDIF.
+
+     ENDIF.
+
+     APPEND WA_PRINT TO IT_PRINT.
+     CLEAR: WA_PRINT, WA_LINEITEMS.
+   ENDLOOP.
+   CLEAR: WA_ZVBR.
+ ENDLOOP.
+
+ENDFORM.
+
+FORM F_LSTDT2.
+
+  CLEAR: WA_ZVBR, WA_PRINT.
+
+  SORT IT_ZVBR BY KUNNR.
+  DELETE ADJACENT DUPLICATES FROM IT_ZVBR COMPARING KUNNR.
+
+ LOOP AT IT_ZVBR INTO WA_ZVBR.
+
+   CALL FUNCTION 'BAPI_AR_ACC_GETOPENITEMS'
+     EXPORTING
+       COMPANYCODE       = WA_ZVBR-BUKRS
+       CUSTOMER          = WA_ZVBR-KUNNR
+       KEYDATE           = P_BUDAT
+      NOTEDITEMS         =  'X'
+*      SECINDEX          = ' '
+    IMPORTING
+      RETURN             = V_RTURN
+     TABLES
+       LINEITEMS         = IT_LINEITEMS
+             .
+   LOOP AT IT_LINEITEMS INTO WA_LINEITEMS WHERE SP_GL_IND <> 'A'.
+
+     WA_PRINT-KUNNR = WA_LINEITEMS-CUSTOMER.
+     WA_PRINT-BELNR = WA_LINEITEMS-DOC_NO.
+     WA_PRINT-BUDAT = WA_LINEITEMS-PSTNG_DATE.
+
+     IF WA_LINEITEMS-CURRENCY <> ''.
+       WA_PRINT-CURR1 = WA_LINEITEMS-CURRENCY.
+       WA_PRINT-CURR2 = WA_LINEITEMS-CURRENCY.
+       WA_PRINT-CURR3 = WA_LINEITEMS-CURRENCY.
+       WA_PRINT-CURR4 = WA_LINEITEMS-CURRENCY.
+       WA_PRINT-CURR5 = WA_LINEITEMS-CURRENCY.
+       WA_PRINT-CURR6 = WA_LINEITEMS-CURRENCY.
+       WA_PRINT-CURR7 = WA_LINEITEMS-CURRENCY.
+     ELSE.
+       WA_PRINT-CURR1 = 'IDR'.
+       WA_PRINT-CURR2 = 'IDR'.
+       WA_PRINT-CURR3 = 'IDR'.
+       WA_PRINT-CURR4 = 'IDR'.
+       WA_PRINT-CURR5 = 'IDR'.
+       WA_PRINT-CURR6 = 'IDR'.
+       WA_PRINT-CURR7 = 'IDR'.
+     ENDIF.
+
+     WA_PRINT-SP_GL_IND = WA_LINEITEMS-SP_GL_IND.
+     WA_PRINT-ALLOC_NMBR = WA_LINEITEMS-ALLOC_NMBR.
+     WA_PRINT-DOC_TYPE = WA_LINEITEMS-DOC_TYPE.
+
+*     IF WA_LINEITEMS-DOC_TYPE = 'DZ'.
+*       WA_PRINT-PIUTANG = ( WA_LINEITEMS-LC_AMOUNT * -1 ) / 100.
+*     ELSEIF WA_LINEITEMS-DOC_TYPE = ''.
+*       WA_PRINT-PIUTANG = WA_LINEITEMS-LC_AMOUNT * -1.
+*     ELSE.
+*       WA_PRINT-PIUTANG = WA_LINEITEMS-LC_AMOUNT / 100.
+*     ENDIF.
+
+    IF wa_lineitems-db_cr_ind = 'S'.
+      wa_print-piutang = wa_lineitems-amount / 100.
+    ELSEIF wa_lineitems-db_cr_ind = 'H'.
+      wa_print-piutang = wa_lineitems-amount / -100.
+    ENDIF.
+
+     SELECT SINGLE NAME1 FROM KNA1
+       INTO WA_PRINT-CUST_NAME
+       WHERE KUNNR = WA_ZVBR-KUNNR.
+
+     SELECT SINGLE NAME1 FROM KNA1
+       INNER JOIN VBPA ON KNA1~KUNNR = VBPA~KUNNR
+       INTO WA_PRINT-SALES_NAME
+       WHERE VBPA~PARVW = 'ZS' AND
+             VBPA~VBELN = WA_LINEITEMS-BILL_DOC.
+
+     WA_PRINT-DUE_DATE = WA_LINEITEMS-BLINE_DATE + WA_LINEITEMS-DSCT_DAYS1.
+
+*     IF SY-DATUM <= WA_PRINT-DUE_DATE.
+     IF P_BUDAT <= WA_PRINT-DUE_DATE.
+       WA_PRINT-BJT = WA_PRINT-PIUTANG.
+     ELSEIF P_BUDAT > WA_PRINT-DUE_DATE.
+       WA_PRINT-BJT = 0.
+
+*       IF ( SY-DATUM - WA_PRINT-DUE_DATE ) <= 30.
+       IF ( P_BUDAT - WA_PRINT-DUE_DATE  ) <= 30.
+         WA_PRINT-DUE0 = WA_PRINT-PIUTANG.
+       ELSEIF ( P_BUDAT - WA_PRINT-DUE_DATE  ) <= 60.
+         WA_PRINT-DUE30 = WA_PRINT-PIUTANG.
+       ELSEIF ( P_BUDAT - WA_PRINT-DUE_DATE ) <= 90.
+         WA_PRINT-DUE60 = WA_PRINT-PIUTANG.
+       ELSEIF ( P_BUDAT - WA_PRINT-DUE_DATE ) <= 120.
+         WA_PRINT-DUE90 = WA_PRINT-PIUTANG.
+       ELSE.
+         WA_PRINT-DUE_UP_120 = WA_PRINT-PIUTANG.
+       ENDIF.
+
+     ENDIF.
+
+     APPEND WA_PRINT TO IT_PRINT.
+     CLEAR: WA_PRINT, WA_LINEITEMS.
+*    ENDIF.
+*    CLEAR: D_DATE.
+   ENDLOOP.
+   CLEAR: WA_ZVBR.
+ ENDLOOP.
+
+ENDFORM.
+
+FORM fit_it_print.
+  CLEAR: it_print2, it_print3.
+
+  it_print2 = it_print.
+  it_print3 = it_print.
+
+  SORT it_print2 BY kunnr alloc_nmbr belnr DESCENDING.
+  DELETE ADJACENT DUPLICATES FROM it_print2 COMPARING kunnr alloc_nmbr.
+*  CLEAR it_print.
+
+  LOOP AT it_print2 INTO wa_print2.
+
+    LOOP AT it_print3 INTO wa_print3 WHERE kunnr = wa_print2-kunnr AND alloc_nmbr = wa_print2-alloc_nmbr.
+      wa_print4-due0 = wa_print4-due0 + wa_print3-due0.
+      wa_print4-due30 = wa_print4-due30 + wa_print3-due30.
+      wa_print4-due60 = wa_print4-due60 + wa_print3-due60.
+      wa_print4-due90 = wa_print4-due90 + wa_print3-due90.
+      wa_print4-due_up_120 = wa_print4-due_up_120 + wa_print3-due_up_120.
+      wa_print4-piutang = wa_print4-piutang + wa_print3-piutang.
+      wa_print4-bjt = wa_print4-bjt + wa_print3-bjt.
+    ENDLOOP.
+
+    wa_print4-kunnr = wa_print2-kunnr.
+    wa_print4-budat = wa_print2-budat.
+    wa_print4-belnr = wa_print2-belnr.
+
+    WA_PRINT4-CURR1 = wa_print2-curr1.
+    WA_PRINT4-CURR2 = wa_print2-curr2.
+    WA_PRINT4-CURR3 = wa_print2-curr3.
+    WA_PRINT4-CURR4 = wa_print2-curr4.
+    WA_PRINT4-CURR5 = wa_print2-curr5.
+    WA_PRINT4-CURR6 = wa_print2-curr6.
+    WA_PRINT4-CURR7 = wa_print2-curr7.
+
+    wa_print4-cust_name = wa_print2-cust_name.
+    wa_print4-sales_name = wa_print2-sales_name.
+
+    wa_print4-due_date = wa_print2-due_date.
+
+    APPEND wa_print4 TO it_print4.
+    CLEAR: wa_print2, wa_print3, wa_print4.
+  ENDLOOP.
+
+  CLEAR it_print.
+  it_print = it_print4.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form FIT_BY_CUSTOMER
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM FIT_BY_CUSTOMER .
+  CLEAR: it_print2, it_print3.
+
+  it_print2 = it_print.
+  it_print3 = it_print.
+
+  SORT it_print2 BY cust_name sales_name ASCENDING.
+  DELETE ADJACENT DUPLICATES FROM it_print2 COMPARING cust_name sales_name.
+
+  LOOP AT it_print2 INTO wa_print2.
+
+    LOOP AT it_print3 INTO wa_print3 WHERE cust_name = wa_print2-cust_name AND sales_name = wa_print2-sales_name.
+      wa_print4-due0 = wa_print4-due0 + wa_print3-due0.
+      wa_print4-due30 = wa_print4-due30 + wa_print3-due30.
+      wa_print4-due60 = wa_print4-due60 + wa_print3-due60.
+      wa_print4-due90 = wa_print4-due90 + wa_print3-due90.
+      wa_print4-due_up_120 = wa_print4-due_up_120 + wa_print3-due_up_120.
+      wa_print4-piutang = wa_print4-piutang + wa_print3-piutang.
+      wa_print4-bjt = wa_print4-bjt + wa_print3-bjt.
+    ENDLOOP.
+
+    wa_print4-kunnr = wa_print2-kunnr.
+    WA_PRINT4-CURR1 = wa_print2-curr1.
+    WA_PRINT4-CURR2 = wa_print2-curr2.
+    WA_PRINT4-CURR3 = wa_print2-curr3.
+    WA_PRINT4-CURR4 = wa_print2-curr4.
+    WA_PRINT4-CURR5 = wa_print2-curr5.
+    WA_PRINT4-CURR6 = wa_print2-curr6.
+    WA_PRINT4-CURR7 = wa_print2-curr7.
+
+    wa_print4-cust_name = wa_print2-cust_name.
+    wa_print4-sales_name = wa_print2-sales_name.
+
+    APPEND wa_print4 TO it_print4.
+    CLEAR: wa_print2, wa_print3, wa_print4.
+  ENDLOOP.
+
+  CLEAR it_print.
+  it_print = it_print4.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form FIT_FOR_SPECIAL_CUSTOMER
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM FIT_FOR_SPECIAL_CUSTOMER .
+
+*  CLEAR: wa_monyr, wa_print.
+  LOOP AT it_print INTO wa_print.
+    wa_monyr-kunnr = wa_print-kunnr.
+    wa_monyr-monyr = wa_print-due_date+0(6).
+    APPEND wa_monyr TO it_monyr.
+    CLEAR: wa_print, wa_monyr.
+  ENDLOOP.
+
+  SORT it_monyr BY kunnr monyr.
+  DELETE ADJACENT DUPLICATES FROM it_monyr COMPARING kunnr monyr.
+
+  CLEAR: it_print2, it_print3.
+
+  SORT it_print BY kunnr due_date.
+*  CLEAR: wa_monyr, wa_print, wa_print2.
+  LOOP AT it_monyr INTO wa_monyr.
+    LOOP AT it_print INTO wa_print WHERE kunnr = wa_monyr-kunnr AND due_date+0(6) = wa_monyr-monyr.
+      wa_print2-due0 = wa_print2-due0 + wa_print-due0.
+      wa_print2-due30 = wa_print2-due30 + wa_print-due30.
+      wa_print2-due60 = wa_print2-due60 + wa_print-due60.
+      wa_print2-due90 = wa_print2-due90 + wa_print-due90.
+      wa_print2-due_up_120 = wa_print2-due_up_120 + wa_print-due_up_120.
+      wa_print2-piutang = wa_print2-piutang + wa_print-piutang.
+      wa_print2-bjt = wa_print2-bjt + wa_print-bjt.
+    ENDLOOP.
+
+    CONCATENATE wa_monyr-monyr+4(2) '/' wa_monyr-monyr+0(4) INTO wa_print2-period.
+
+    wa_print2-kunnr = wa_print-kunnr.
+    WA_PRINT2-CURR1 = wa_print-curr1.
+    WA_PRINT2-CURR2 = wa_print-curr2.
+    WA_PRINT2-CURR3 = wa_print-curr3.
+    WA_PRINT2-CURR4 = wa_print-curr4.
+    WA_PRINT2-CURR5 = wa_print-curr5.
+    WA_PRINT2-CURR6 = wa_print-curr6.
+    WA_PRINT2-CURR7 = wa_print-curr7.
+
+    wa_print2-cust_name = wa_print-cust_name.
+    wa_print2-sales_name = wa_print-sales_name.
+
+    APPEND wa_print2 TO it_print2.
+    CLEAR: wa_monyr, wa_print, wa_print2.
+  ENDLOOP.
+
+  LOOP AT it_print INTO wa_print.
+    kunnr = wa_print-kunnr.
+    APPEND kunnr TO it_kunnr.
+    CLEAR: kunnr, wa_print.
+  ENDLOOP.
+
+  SORT it_kunnr.
+  DELETE ADJACENT DUPLICATES FROM it_kunnr.
+
+*  For checking the payment only
+  LOOP AT it_kunnr INTO kunnr.
+    LOOP AT it_print2 INTO wa_print2 WHERE piutang < 0 AND kunnr = kunnr.
+      wa_print3-piutang = wa_print3-piutang + wa_print2-piutang.
+    ENDLOOP.
+
+    wa_print3-kunnr = wa_print2-kunnr.
+
+    APPEND wa_print3 TO it_print3.
+    CLEAR: kunnr, wa_print2, wa_print3.
+  ENDLOOP.
+
+*  create divider table based on each customer
+  LOOP AT it_kunnr INTO kunnr.
+    LOOP AT it_print2 INTO wa_print2 WHERE piutang > 0 AND kunnr = kunnr.
+      divider-i = divider-i + 1.
+    ENDLOOP.
+
+    divider-kunnr = wa_print2-kunnr.
+
+    APPEND divider TO it_divider.
+    CLEAR: kunnr, wa_print2, divider.
+  ENDLOOP.
+
+  LOOP AT it_divider INTO divider.
+    IF divider-i > 0.
+      divider2-i = divider-i.
+      divider2-kunnr = divider-kunnr.
+
+      APPEND divider2 TO it_divider2.
+      CLEAR: divider, divider2.
+    ENDIF.
+  ENDLOOP.
+
+  CLEAR it_divider.
+  it_divider = it_divider2.
+
+*  create average payment table
+  LOOP AT it_print3 INTO wa_print3.
+    READ TABLE it_divider INTO divider WITH KEY kunnr = wa_print3-kunnr.
+
+    avg_pymt-kunnr = wa_print3-kunnr.
+    avg_pymt-avg = wa_print3-piutang / divider-i.
+
+    APPEND avg_pymt TO t_avg_pymt.
+    CLEAR: wa_print3, avg_pymt, divider.
+  ENDLOOP.
+
+*  for display only invoice data
+  LOOP AT it_print2 INTO wa_print2 WHERE piutang > 0.
+    READ TABLE t_avg_pymt INTO avg_pymt WITH KEY kunnr = wa_print2-kunnr.
+    wa_print4-piutang = wa_print2-piutang + avg_pymt-avg.
+
+    CLEAR i.
+    IF wa_print2-due0 > 0.
+      i = i + 1.
+    ENDIF.
+
+    IF wa_print2-due30 > 0.
+      i = i + 1.
+    ENDIF.
+
+    IF wa_print2-due60 > 0.
+      i = i + 1.
+    ENDIF.
+
+    IF wa_print2-due90 > 0.
+      i = i + 1.
+    ENDIF.
+
+    IF wa_print2-due_up_120 > 0.
+      i = i + 1.
+    ENDIF.
+
+    IF wa_print2-due0 > 0.
+      wa_print4-due0 = wa_print2-due0 + ( avg_pymt-avg / i ).
+    ELSE.
+      wa_print4-due0 = wa_print2-due0.
+    ENDIF.
+
+    IF wa_print2-due30 > 0.
+      wa_print4-due30 = wa_print2-due30 + ( avg_pymt-avg / i ).
+    ELSE.
+      wa_print4-due30 = wa_print2-due30.
+    ENDIF.
+
+    IF wa_print2-due60 > 0.
+      wa_print4-due60 = wa_print2-due60 + ( avg_pymt-avg / i ).
+    ELSE.
+      wa_print4-due60 = wa_print2-due60.
+    ENDIF.
+
+    IF wa_print2-due90 > 0.
+      wa_print4-due90 = wa_print2-due90 + ( avg_pymt-avg / i ).
+    ELSE.
+      wa_print4-due90 = wa_print2-due90.
+    ENDIF.
+
+    IF wa_print2-due_up_120 > 0.
+      wa_print4-due_up_120 = wa_print2-due_up_120 + ( avg_pymt-avg / i ).
+    ELSE.
+      wa_print4-due_up_120 = wa_print2-due_up_120.
+    ENDIF.
+
+    wa_print4-bjt = wa_print4-piutang - ( wa_print4-due0 + wa_print4-due30 + wa_print4-due60 + wa_print4-due90 + wa_print4-due_up_120 ).
+
+    wa_print4-kunnr = wa_print2-kunnr.
+    WA_PRINT4-CURR1 = wa_print2-curr1.
+    WA_PRINT4-CURR2 = wa_print2-curr2.
+    WA_PRINT4-CURR3 = wa_print2-curr3.
+    WA_PRINT4-CURR4 = wa_print2-curr4.
+    WA_PRINT4-CURR5 = wa_print2-curr5.
+    WA_PRINT4-CURR6 = wa_print2-curr6.
+    WA_PRINT4-CURR7 = wa_print2-curr7.
+
+    wa_print4-cust_name = wa_print2-cust_name.
+    wa_print4-sales_name = wa_print2-sales_name.
+    wa_print4-period = wa_print2-period.
+
+    APPEND wa_print4 TO it_print4.
+    CLEAR: wa_print2, wa_print4, avg_pymt.
+  ENDLOOP.
+
+  CLEAR it_print.
+  it_print = it_print4.
+ENDFORM.
